@@ -17,6 +17,7 @@ export const useRole = () => {
   const role = user?.role as Role | undefined;
 
   return {
+    user,
     role,
     isLoaded,
     

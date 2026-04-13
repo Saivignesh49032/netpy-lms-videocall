@@ -12,17 +12,37 @@ const API_KEY = process.env.NEXT_PUBLIC_STREAM_API_KEY;
 
 const StreamVideoProvider = ({ children }: { children: ReactNode }) => {
   const [videoClient, setVideoClient] = useState<StreamVideoClient>();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null | undefined>(undefined);
 
   useEffect(() => {
+    let isMounted = true;
+    const supabase = createClient();
+
     const fetchUser = async () => {
-      const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
+      if (!isMounted) return;
       if (session?.user) {
         setUser(session.user);
+      } else {
+        setUser(null);
       }
     };
     fetchUser();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return;
+      if (session?.user) {
+        setUser(session.user);
+      } else {
+        setUser(null);
+        setVideoClient(undefined);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -45,6 +65,8 @@ const StreamVideoProvider = ({ children }: { children: ReactNode }) => {
     setVideoClient(client);
   }, [user]);
 
+  if (user === undefined) return <Loader />;
+  if (user === null) return <>{children}</>;
   if (!videoClient) return <Loader />;
 
   return <StreamVideo client={videoClient}>{children}</StreamVideo>;

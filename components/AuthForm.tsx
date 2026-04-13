@@ -30,16 +30,13 @@ export function AuthForm({ type }: { type: 'sign-in' | 'sign-up' }) {
       });
       error = signInError;
     } else {
-      const { error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            role: role,
-          },
-        },
+      setLoading(false);
+      toast({
+        title: 'Error',
+        description: 'Sign ups are by invitation only.',
+        variant: 'destructive',
       });
-      error = signUpError;
+      return;
     }
 
     setLoading(false);
@@ -94,28 +91,8 @@ export function AuthForm({ type }: { type: 'sign-in' | 'sign-up' }) {
         </div>
 
         {type === 'sign-up' && (
-          <div className="flex flex-col gap-2 shadow-sm text-sm text-white mt-2">
-            <h3 className="mb-1 text-gray-400">Select Account Role</h3>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input 
-                  type="radio" 
-                  value="student" 
-                  checked={role === 'student'} 
-                  onChange={() => setRole('student')} 
-                />
-                Student
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input 
-                  type="radio" 
-                  value="teacher" 
-                  checked={role === 'teacher'} 
-                  onChange={() => setRole('teacher')} 
-                />
-                Teacher
-              </label>
-            </div>
+          <div className="p-4 bg-red-500 bg-opacity-20 text-red-100 rounded text-sm text-center">
+            Sign ups are currently by invitation only. Please contact an administrator.
           </div>
         )}
         
@@ -129,17 +106,7 @@ export function AuthForm({ type }: { type: 'sign-in' | 'sign-up' }) {
       </form>
 
       <div className="text-center text-sm text-gray-400">
-        {type === 'sign-in' ? (
-          <p>
-            Don't have an account?{' '}
-            <span 
-              className="cursor-pointer text-blue-1 hover:underline"
-              onClick={() => router.push('/sign-up')}
-            >
-              Sign up
-            </span>
-          </p>
-        ) : (
+        {type === 'sign-in' ? null : (
           <p>
             Already have an account?{' '}
             <span 

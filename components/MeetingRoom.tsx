@@ -17,7 +17,7 @@ import {
   useCall,
 } from '@stream-io/video-react-sdk';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Users, LayoutList, MessageSquare, Hand, PenLine } from 'lucide-react';
+import { Users, LayoutList, MessageSquare, Hand, PenLine, HelpCircle } from 'lucide-react';
 
 import {
   DropdownMenu,
@@ -30,8 +30,9 @@ import Loader from './Loader';
 import EndCallButton from './EndCallButton';
 import ChatWindow from './ChatWindow';
 import Whiteboard from './Whiteboard';
+import QAPanel from './QAPanel';
 import { cn } from '@/lib/utils';
-import { useUser } from '@/hooks/useUser';
+import { useRole } from '@/hooks/useRole';
 import { useToast } from './ui/use-toast';
 import { useEffect } from 'react';
 
@@ -45,8 +46,9 @@ const MeetingRoom = () => {
   const [showParticipants, setShowParticipants] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [showWhiteboard, setShowWhiteboard] = useState(false);
+  const [showQA, setShowQA] = useState(false);
   const { useCallCallingState, useLocalParticipant } = useCallStateHooks();
-  const { user } = useUser();
+  const { user, isStaffOrAbove } = useRole();
   const { toast } = useToast();
 
   // for more detail about types of CallingState see: https://getstream.io/video/docs/react/ui-cookbook/ringing-call/#incoming-call-panel
@@ -54,7 +56,7 @@ const MeetingRoom = () => {
   const localParticipant = useLocalParticipant();
   const call = useCall();
   
-  const isMeetingOwner = user?.role === 'teacher';
+  const isMeetingOwner = isStaffOrAbove;
 
   useEffect(() => {
     if (!call) return;
@@ -142,6 +144,11 @@ const MeetingRoom = () => {
         >
           <CallParticipantsList onClose={() => setShowParticipants(false)} />
         </div>
+        {showQA && call?.id && (
+          <div className="h-[calc(100vh-86px)] ml-2 flex-shrink-0">
+            <QAPanel callId={call.id} onClose={() => setShowQA(false)} />
+          </div>
+        )}
       </div>
       {/* video layout and call controls */}
       <div className="fixed bottom-0 flex w-full flex-wrap items-center justify-center gap-5 pb-5 mt-4">
@@ -166,6 +173,12 @@ const MeetingRoom = () => {
         <button onClick={() => setShowChat((prev) => !prev)} className="transition-all hover:scale-105">
           <div className={cn("cursor-pointer rounded-2xl bg-[#19232d] px-4 py-2 hover:bg-[#4c535b] flex items-center gap-2", {"bg-blue-1 hover:bg-blue-600": showChat })}>
             <MessageSquare size={20} className="text-white" />
+          </div>
+        </button>
+
+        <button onClick={() => setShowQA((prev) => !prev)} className="transition-all hover:scale-105" title="Q&A">
+          <div className={cn("cursor-pointer rounded-2xl bg-[#19232d] px-4 py-2 hover:bg-[#4c535b] flex items-center gap-2", {"bg-sky-600 hover:bg-sky-700": showQA })}>
+            <HelpCircle size={20} className="text-white" />
           </div>
         </button>
 
