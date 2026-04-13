@@ -17,7 +17,7 @@ import {
   useCall,
 } from '@stream-io/video-react-sdk';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Users, LayoutList, MessageSquare, Hand } from 'lucide-react';
+import { Users, LayoutList, MessageSquare, Hand, PenLine } from 'lucide-react';
 
 import {
   DropdownMenu,
@@ -29,6 +29,7 @@ import {
 import Loader from './Loader';
 import EndCallButton from './EndCallButton';
 import ChatWindow from './ChatWindow';
+import Whiteboard from './Whiteboard';
 import { cn } from '@/lib/utils';
 import { useUser } from '@/hooks/useUser';
 import { useToast } from './ui/use-toast';
@@ -43,6 +44,7 @@ const MeetingRoom = () => {
   const [layout, setLayout] = useState<CallLayoutType>('grid');
   const [showParticipants, setShowParticipants] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [showWhiteboard, setShowWhiteboard] = useState(false);
   const { useCallCallingState, useLocalParticipant } = useCallStateHooks();
   const { user } = useUser();
   const { toast } = useToast();
@@ -111,9 +113,20 @@ const MeetingRoom = () => {
         }
       `}</style>
       <div className="relative flex size-full items-center justify-center">
-        <div className=" flex size-full max-w-[1000px] items-center">
-          <CallLayout />
-        </div>
+        {showWhiteboard ? (
+          <div className="flex size-full items-center p-4">
+            <Whiteboard 
+              meetingId={call?.id ?? ''}
+              isHost={isMeetingOwner}
+              currentUserId={user?.id ?? ''}
+              currentUserName={user?.username ?? ''}
+            />
+          </div>
+        ) : (
+          <div className=" flex size-full max-w-[1000px] items-center">
+            <CallLayout />
+          </div>
+        )}
         
         <div
           className={cn('h-[calc(100vh-86px)] hidden ml-2 w-[350px] rounded-lg overflow-hidden', {
@@ -151,8 +164,14 @@ const MeetingRoom = () => {
         </div>
 
         <button onClick={() => setShowChat((prev) => !prev)} className="transition-all hover:scale-105">
-          <div className="cursor-pointer rounded-2xl bg-[#19232d] px-4 py-2 hover:bg-[#4c535b] flex items-center gap-2">
+          <div className={cn("cursor-pointer rounded-2xl bg-[#19232d] px-4 py-2 hover:bg-[#4c535b] flex items-center gap-2", {"bg-blue-1 hover:bg-blue-600": showChat })}>
             <MessageSquare size={20} className="text-white" />
+          </div>
+        </button>
+
+        <button onClick={() => setShowWhiteboard((prev) => !prev)} className="transition-all hover:scale-105">
+          <div className={cn("cursor-pointer rounded-2xl bg-[#19232d] px-4 py-2 hover:bg-[#4c535b] flex items-center gap-2", {"bg-blue-1 hover:bg-blue-600": showWhiteboard })}>
+            <PenLine size={20} className="text-white" />
           </div>
         </button>
 
