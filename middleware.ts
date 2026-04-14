@@ -26,7 +26,14 @@ export async function middleware(request: NextRequest) {
     )
 
     const { data: { user } } = await supabase.auth.getUser()
-    const isPublicRoute = request.nextUrl.pathname.startsWith('/sign-in') || request.nextUrl.pathname.startsWith('/sign-up')
+    const isPublicRoute = request.nextUrl.pathname.startsWith('/sign-in') || 
+                          request.nextUrl.pathname.startsWith('/sign-up') || 
+                          request.nextUrl.pathname.startsWith('/invite/accept') ||
+                          request.nextUrl.pathname.startsWith('/setup') ||
+                          request.nextUrl.pathname.startsWith('/api/auth/setup') ||
+                          request.nextUrl.pathname.startsWith('/api/webhooks')
+
+    const isRootRoute = request.nextUrl.pathname === '/'
 
     if (!user && !isPublicRoute) {
       const url = request.nextUrl.clone()
@@ -36,7 +43,13 @@ export async function middleware(request: NextRequest) {
 
     if (user && isPublicRoute) {
       const url = request.nextUrl.clone()
-      url.pathname = '/'
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
+
+    if (user && isRootRoute) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
       return NextResponse.redirect(url)
     }
 

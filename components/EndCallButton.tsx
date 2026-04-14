@@ -4,7 +4,7 @@ import { useCall, useCallStateHooks } from '@stream-io/video-react-sdk';
 
 import { Button } from './ui/button';
 import { useRouter } from 'next/navigation';
-import { useUser } from '@/hooks/useUser';
+import { useRole } from '@/hooks/useRole';
 
 const EndCallButton = () => {
   const call = useCall();
@@ -18,9 +18,9 @@ const EndCallButton = () => {
   // https://getstream.io/video/docs/react/guides/call-and-participant-state/#participant-state-3
   const { useLocalParticipant } = useCallStateHooks();
   const localParticipant = useLocalParticipant();
-  const { user } = useUser();
+  const { isStaffOrAbove } = useRole();
 
-  const isMeetingOwner = user?.role === 'teacher';
+  const isMeetingOwner = isStaffOrAbove;
 
   if (!isMeetingOwner) return null;
 
