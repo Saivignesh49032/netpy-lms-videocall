@@ -1,15 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import Loader from '@/components/Loader';
 import { Button } from '@/components/ui/button';
+import MeetingCreationForm from '@/components/MeetingCreationForm';
 import { useRouter } from 'next/navigation';
-import { ExternalLink, Video } from 'lucide-react';
+import { ExternalLink, Video, Plus } from 'lucide-react';
 
 const STATUS_STYLE: Record<string, string> = {
-  live: 'bg-red-100 text-red-700',
+  live: 'bg-red-100 text-red-700 animate-pulse',
   scheduled: 'bg-blue-100 text-blue-700',
   ended: 'bg-gray-100 text-gray-500',
   cancelled: 'bg-yellow-100 text-yellow-700',
@@ -18,33 +19,56 @@ const STATUS_STYLE: Record<string, string> = {
 export default function SuperAdminMeetingsPage() {
   const [meetings, setMeetings] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
 
-  useEffect(() => {
-    fetch('/api/meetings')
-      .then(r => r.json())
-      .then(d => setMeetings(d.meetings || []))
-      .catch(err => toast({ title: 'Error', description: err.message, variant: 'destructive' }))
-      .finally(() => setIsLoading(false));
-  }, []);
+  const fetchMeetings = useCallback(async () => {
+    try {
+      const r = await fetch('/api/meetings');
+      const data = await r.json().catch(() => null);
+      if (!r.ok) throw new Error(data?.error ?? r.statusText ?? `Request failed with status ${r.status}`);
+      setMeetings(data.meetings || []);
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => { fetchMeetings(); }, [fetchMeetings]);
 
   if (isLoading) return <div className="flex justify-center p-12"><Loader /></div>;
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-3xl font-bold text-slate-100">All Meetings</h1>
-        <p className="text-slate-400">Platform-wide view of all scheduled and past meetings.</p>
+      {showForm && (
+        <MeetingCreationForm onClose={() => setShowForm(false)} onCreated={fetchMeetings} />
+      )}
+
+      <div className="flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-100">Meetings</h1>
+          <p className="text-slate-400">Create, schedule, and monitor all platform meetings.</p>
+        </div>
+        <Button
+          onClick={() => setShowForm(true)}
+          className="bg-purple-600 hover:bg-purple-700 text-white gap-2"
+        >
+          <Plus className="h-4 w-4" /> New Meeting
+        </Button>
       </div>
 
       <Card className="bg-slate-800 border-slate-700">
         <CardHeader><CardTitle className="text-slate-100">Meeting Log</CardTitle></CardHeader>
         <CardContent>
           {meetings.length === 0 ? (
-            <div className="flex flex-col items-center py-16 gap-3">
+            <div className="flex flex-col items-center py-16 gap-4">
               <Video className="h-10 w-10 text-slate-600" />
               <p className="text-slate-500">No meetings have been created yet.</p>
+              <Button onClick={() => setShowForm(true)} className="bg-purple-600 hover:bg-purple-700 text-white gap-2">
+                <Plus className="h-4 w-4" /> Create your first meeting
+              </Button>
             </div>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-slate-700">
@@ -68,11 +92,22 @@ export default function SuperAdminMeetingsPage() {
                           {m.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-400">{new Date(m.created_at).toLocaleDateString()}</td>
+                      <td className="px-4 py-3 text-sm text-slate-400">
+                        {m.scheduled_at
+                          ? new Date(m.scheduled_at).toLocaleString()
+                          : m.created_at && !Number.isNaN(Date.parse(m.created_at))
+                            ? new Date(m.created_at).toLocaleDateString()
+                            : '—'}
+                      </td>
                       <td className="px-4 py-3">
                         {m.status !== 'ended' && m.status !== 'cancelled' && (
-                          <Button size="sm" variant="outline" className="border-slate-600 text-slate-300 h-7"
-                            onClick={() => router.push(`/meeting/${m.stream_call_id}`)}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!m.stream_call_id}
+                            className="border-slate-600 text-slate-300 h-7 disabled:opacity-50"
+                            onClick={() => { if (m.stream_call_id) router.push(`/meeting/${m.stream_call_id}`); }}
+                          >
                             <ExternalLink className="h-3 w-3 mr-1" /> Join
                           </Button>
                         )}

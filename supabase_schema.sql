@@ -11,8 +11,16 @@ CREATE TABLE organisations (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   logo_url text,
+  settings jsonb not null default '{}'::jsonb,
   created_by uuid, -- Self-referential to users, will set constraint later or rely on app logic
   created_at timestamptz default now()
+);
+
+CREATE TABLE platform_bootstrap_state (
+  singleton boolean primary key default true check (singleton),
+  initialized_at timestamptz default now(),
+  super_admin_user_id uuid,
+  organisation_id uuid
 );
 
 -- 2. Users (extends Supabase Auth)
@@ -20,7 +28,7 @@ CREATE TABLE users (
   id uuid primary key references auth.users(id) on delete cascade,
   email text unique not null,
   full_name text,
-  role text check (role in ('super_admin','org_admin','staff','student')),
+  role text not null check (role in ('super_admin','org_admin','staff','student')),
   org_id uuid references organisations(id) on delete cascade,
   avatar_url text,
   phone text,
@@ -63,7 +71,7 @@ CREATE TABLE subjects (
 CREATE TABLE meetings (
   id uuid primary key default gen_random_uuid(),
   org_id uuid references organisations(id) on delete cascade,
-  host_id uuid references users(id) on delete cascade,
+  host_id uuid references users(id) on delete set null,
   stream_call_id text,
   title text not null,
   subject_id uuid references subjects(id) on delete cascade,
@@ -96,9 +104,9 @@ CREATE TABLE meeting_invites (
 CREATE TABLE questions (
   id uuid primary key default gen_random_uuid(),
   meeting_id uuid references meetings(id) on delete cascade,
-  asked_by uuid references users(id) on delete cascade,
+  asked_by uuid references users(id) on delete set null,
   text text not null,
-  upvotes int default 0,
+  upvotes int default 0 check (upvotes >= 0),
   is_answered boolean default false,
   is_pinned boolean default false,
   created_at timestamptz default now()
@@ -138,6 +146,13 @@ CREATE TABLE invite_tokens (
   created_at timestamptz default now()
 );
 
+CREATE TABLE question_upvotes (
+  question_id uuid references questions(id) on delete cascade,
+  user_id uuid references users(id) on delete cascade,
+  created_at timestamptz default now(),
+  primary key (question_id, user_id)
+);
+
 -- -------------------------------------------------------------
 -- RLS (Row Level Security) Implementation Details
 -- We will enable RLS for tenant isolation to ensure data from
@@ -155,16 +170,147 @@ ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE question_replies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invite_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE question_upvotes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE platform_bootstrap_state ENABLE ROW LEVEL SECURITY;
 
 -- Utility func to extract current user role quickly inside RLS
 CREATE OR REPLACE FUNCTION auth_user_role() RETURNS text AS $$
   SELECT role FROM public.users WHERE id = auth.uid() LIMIT 1;
-$$ LANGUAGE sql SECURITY DEFINER;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = public, pg_temp;
 
 -- Utility func to get current user organization quickly inside RLS
 CREATE OR REPLACE FUNCTION auth_user_org_id() RETURNS uuid AS $$
   SELECT org_id FROM public.users WHERE id = auth.uid() LIMIT 1;
-$$ LANGUAGE sql SECURITY DEFINER;
+$$ LANGUAGE sql SECURITY DEFINER SET search_path = public, pg_temp;
+
+CREATE OR REPLACE FUNCTION bootstrap_initial_platform(
+  p_user_id uuid,
+  p_email text,
+  p_full_name text,
+  p_org_name text
+) RETURNS TABLE (organisation_id uuid, user_id uuid) AS $$
+DECLARE
+  v_org_id uuid;
+BEGIN
+  INSERT INTO public.platform_bootstrap_state (singleton)
+  VALUES (true)
+  ON CONFLICT (singleton) DO NOTHING;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Setup is locked. Users already exist in the system.';
+  END IF;
+
+  INSERT INTO public.organisations (name, created_by)
+  VALUES (trim(p_org_name), null)
+  RETURNING id INTO v_org_id;
+
+  INSERT INTO public.users (id, email, full_name, role, org_id)
+  VALUES (p_user_id, lower(trim(p_email)), trim(p_full_name), 'super_admin', v_org_id);
+
+  UPDATE public.organisations
+  SET created_by = p_user_id
+  WHERE id = v_org_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Failed to set organisation owner for user % and org %', p_user_id, v_org_id;
+  END IF;
+
+  UPDATE public.platform_bootstrap_state
+  SET initialized_at = now(),
+      super_admin_user_id = p_user_id,
+      organisation_id = v_org_id
+  WHERE singleton = true;
+
+  RETURN QUERY SELECT v_org_id, p_user_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
+CREATE OR REPLACE FUNCTION consume_invite_token_and_create_user_profile(
+  p_token text,
+  p_user_id uuid,
+  p_email text,
+  p_full_name text
+) RETURNS TABLE (invite_id uuid, role text, org_id uuid) AS $$
+DECLARE
+  v_invite public.invite_tokens%ROWTYPE;
+BEGIN
+  UPDATE public.invite_tokens
+  SET used_at = now()
+  WHERE token = p_token
+    AND used_at IS NULL
+    AND expires_at > now()
+    AND lower(email) = lower(trim(p_email))
+  RETURNING * INTO v_invite;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Invalid or expired token.';
+  END IF;
+
+  INSERT INTO public.users (id, email, full_name, role, org_id, invited_by)
+  VALUES (
+    p_user_id,
+    lower(trim(p_email)),
+    trim(p_full_name),
+    v_invite.role,
+    v_invite.org_id,
+    v_invite.invited_by
+  );
+
+  RETURN QUERY SELECT v_invite.id, v_invite.role, v_invite.org_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
+CREATE OR REPLACE FUNCTION increment_question_upvotes(
+  p_question_id uuid,
+  p_user_id uuid
+) RETURNS boolean AS $$
+BEGIN
+  INSERT INTO public.question_upvotes (question_id, user_id)
+  VALUES (p_question_id, p_user_id)
+  ON CONFLICT DO NOTHING;
+
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  UPDATE public.questions
+  SET upvotes = upvotes + 1
+  WHERE id = p_question_id;
+
+  IF NOT FOUND THEN
+    DELETE FROM public.question_upvotes
+    WHERE question_id = p_question_id
+      AND user_id = p_user_id;
+
+    RAISE EXCEPTION 'Question not found.';
+  END IF;
+
+  RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
+CREATE OR REPLACE FUNCTION prevent_sensitive_user_profile_updates()
+RETURNS trigger AS $$
+BEGIN
+  IF current_setting('request.jwt.claim.role', true) = 'service_role' THEN
+    RETURN NEW;
+  END IF;
+
+  IF OLD.role IS DISTINCT FROM NEW.role
+    OR OLD.org_id IS DISTINCT FROM NEW.org_id
+    OR OLD.is_active IS DISTINCT FROM NEW.is_active THEN
+    RAISE EXCEPTION 'You are not allowed to modify protected profile fields.';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
+
+DROP TRIGGER IF EXISTS protect_sensitive_user_fields ON public.users;
+CREATE TRIGGER protect_sensitive_user_fields
+BEFORE UPDATE ON public.users
+FOR EACH ROW
+EXECUTE FUNCTION prevent_sensitive_user_profile_updates();
 
 
 -- Note: In MVP, using server-side service role client in API routes
@@ -209,4 +355,5 @@ CREATE INDEX idx_batches_org_id ON batches(org_id);
 CREATE INDEX idx_subjects_org_id ON subjects(org_id);
 CREATE INDEX idx_meetings_org_id ON meetings(org_id);
 CREATE INDEX idx_questions_meeting_id ON questions(meeting_id);
+CREATE INDEX idx_question_upvotes_user_id ON question_upvotes(user_id);
 CREATE INDEX idx_notifications_user_id ON notifications(user_id);

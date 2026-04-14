@@ -34,9 +34,26 @@ export async function POST(request: Request) {
     }
 
     // Check custom permissions profile to see if they can create batches
-    const { data: profile } = await supabase.from('users').select('role, org_id').eq('id', user.id).single();
-    if (!permissions.canCreateBatches(profile?.role as Role)) {
+    const { data: profile, error: profileError } = await supabase
+      .from('users')
+      .select('role, org_id')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError) {
+      return NextResponse.json({ error: 'Failed to load user profile' }, { status: 500 });
+    }
+
+    if (!profile) {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+    }
+
+    if (!permissions.canCreateBatches(profile.role as Role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    if (!profile.org_id) {
+      return NextResponse.json({ error: 'User is not assigned to an organization' }, { status: 400 });
     }
 
     const { name, description } = await request.json();
@@ -48,7 +65,7 @@ export async function POST(request: Request) {
       .insert({
         name,
         description,
-        org_id: profile?.org_id,
+        org_id: profile.org_id,
         created_by: user.id
       })
       .select()

@@ -75,41 +75,53 @@ export default function StaffMeetingsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {meetings.map(m => (
-            <div
-              key={m.id}
-              className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col gap-3"
-            >
-              <div className="flex justify-between items-start">
-                <h3 className="font-semibold text-gray-900 text-base leading-snug">{m.title}</h3>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[m.status] || 'bg-gray-100 text-gray-500'}`}>
-                  {m.status}
-                </span>
-              </div>
+            (() => {
+              const hasStreamId = Boolean(m.stream_call_id);
 
-              {m.subjects?.name && (
-                <p className="text-sm text-blue-600 font-medium">{m.subjects.name}</p>
-              )}
-
-              <div className="flex flex-col gap-1 text-xs text-gray-400">
-                {m.scheduled_at ? (
-                  <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />{new Date(m.scheduled_at).toLocaleString()}</span>
-                ) : (
-                  <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />{new Date(m.created_at).toLocaleString()}</span>
-                )}
-                <span>Host: {m['users']?.full_name || m['users']?.email}</span>
-              </div>
-
-              {m.status !== 'ended' && m.status !== 'cancelled' && (
-                <Button
-                  size="sm"
-                  onClick={() => joinMeeting(m.stream_call_id)}
-                  className={`w-full mt-auto gap-2 ${m.status === 'live' ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'} text-white`}
+              return (
+                <div
+                  key={m.id}
+                  className="bg-white border border-gray-100 rounded-xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col gap-3"
                 >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  {m.status === 'live' ? 'Join Live' : 'Open Meeting'}
-                </Button>
-              )}
-            </div>
+                  <div className="flex justify-between items-start">
+                    <h3 className="font-semibold text-gray-900 text-base leading-snug">{m.title}</h3>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_STYLE[m.status] || 'bg-gray-100 text-gray-500'}`}>
+                      {m.status}
+                    </span>
+                  </div>
+
+                  {m.subjects?.name && (
+                    <p className="text-sm text-blue-600 font-medium">{m.subjects.name}</p>
+                  )}
+
+                  <div className="flex flex-col gap-1 text-xs text-gray-400">
+                    {m.scheduled_at ? (
+                      <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />{new Date(m.scheduled_at).toLocaleString()}</span>
+                    ) : (
+                      <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />{new Date(m.created_at).toLocaleString()}</span>
+                    )}
+                    <span>Host: {m.users?.full_name || m.users?.email}</span>
+                  </div>
+
+                  {m.status !== 'ended' && m.status !== 'cancelled' && (
+                    <Button
+                      size="sm"
+                      disabled={!hasStreamId}
+                      title={hasStreamId ? undefined : 'This meeting does not have a Stream call yet.'}
+                      onClick={() => {
+                        if (hasStreamId) {
+                          joinMeeting(m.stream_call_id);
+                        }
+                      }}
+                      className={`w-full mt-auto gap-2 ${m.status === 'live' ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'} text-white disabled:cursor-not-allowed disabled:opacity-50`}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      {m.status === 'live' ? 'Join Live' : 'Open Meeting'}
+                    </Button>
+                  )}
+                </div>
+              );
+            })()
           ))}
         </div>
       )}

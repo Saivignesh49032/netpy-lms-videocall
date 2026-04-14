@@ -19,15 +19,20 @@ function QuestionCard({
   q: Question;
   isStaff: boolean;
   onAction: (id: string, action: 'upvote' | 'pin' | 'answer') => void;
-  onReply: (id: string, text: string) => void;
+  onReply: (id: string, text: string) => Promise<void> | void;
 }) {
   const [showReplies, setShowReplies] = useState(false);
   const [replyText, setReplyText] = useState('');
 
-  const submitReply = () => {
+  const submitReply = async () => {
     if (!replyText.trim()) return;
-    onReply(q.id, replyText);
-    setReplyText('');
+
+    try {
+      await onReply(q.id, replyText);
+      setReplyText('');
+    } catch (error) {
+      console.error('Failed to submit reply:', error);
+    }
   };
 
   return (
@@ -145,9 +150,15 @@ export default function QAPanel({ callId, onClose }: Props) {
   const handlePost = async () => {
     if (!newQuestion.trim() || isSending) return;
     setIsSending(true);
-    await postQuestion(newQuestion);
-    setNewQuestion('');
-    setIsSending(false);
+
+    try {
+      await postQuestion(newQuestion);
+      setNewQuestion('');
+    } catch (error) {
+      console.error('Failed to post question:', error);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   // Scroll to bottom on new questions

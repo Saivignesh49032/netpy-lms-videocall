@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import Loader from '@/components/Loader';
+import { getErrorMessage } from '@/lib/utils';
 
 export default function OrgAdminSubjectsPage() {
   const [subjects, setSubjects] = useState<any[]>([]);
@@ -21,8 +22,8 @@ export default function OrgAdminSubjectsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setSubjects(data.subjects || []);
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } catch (err) {
+      toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -30,7 +31,7 @@ export default function OrgAdminSubjectsPage() {
 
   useEffect(() => { fetchSubjects(); }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
     setIsSubmitting(true);
@@ -45,8 +46,8 @@ export default function OrgAdminSubjectsPage() {
       toast({ title: 'Subject created!' });
       setName(''); setCode('');
       fetchSubjects();
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } catch (err) {
+      toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
@@ -95,12 +96,12 @@ export default function OrgAdminSubjectsPage() {
           <CardContent>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label className="text-sm font-medium block mb-1">Subject Name *</label>
-                <Input placeholder="e.g. Advanced Mathematics" value={name} onChange={e => setName(e.target.value)} disabled={isSubmitting} />
+                <label htmlFor="subject-name" className="text-sm font-medium block mb-1">Subject Name *</label>
+                <Input id="subject-name" placeholder="e.g. Advanced Mathematics" value={name} onChange={e => setName(e.target.value)} disabled={isSubmitting} />
               </div>
               <div>
-                <label className="text-sm font-medium block mb-1">Subject Code</label>
-                <Input placeholder="e.g. MATH301" value={code} onChange={e => setCode(e.target.value)} disabled={isSubmitting} />
+                <label htmlFor="subject-code" className="text-sm font-medium block mb-1">Subject Code</label>
+                <Input id="subject-code" placeholder="e.g. MATH301" value={code} onChange={e => setCode(e.target.value)} disabled={isSubmitting} />
               </div>
               <Button type="submit" disabled={isSubmitting || !name.trim()} className="w-full">
                 {isSubmitting ? 'Adding...' : 'Add Subject'}

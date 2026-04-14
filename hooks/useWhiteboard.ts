@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type MouseEvent, type TouchEvent } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 export type Point = { x: number; y: number };
@@ -31,13 +31,10 @@ export const useWhiteboard = (meetingId: string, isHost: boolean, currentUserId:
   const isDrawingRef = useRef(false);
   const currentStrokeRef = useRef<Stroke | null>(null);
 
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
-    // If the user becomes host (e.g. state sync), they can draw
-    if (isHost) {
-      setCanDraw(true);
-    }
+    setCanDraw(isHost);
   }, [isHost]);
 
   useEffect(() => {
@@ -87,12 +84,17 @@ export const useWhiteboard = (meetingId: string, isHost: boolean, currentUserId:
     }
   }, []);
 
-  const getCoordinates = (e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement): Point => {
+  const getCoordinates = (e: MouseEvent | TouchEvent, canvas: HTMLCanvasElement): Point => {
     const rect = canvas.getBoundingClientRect();
     if ('touches' in e) {
+      const touch = (e.touches && e.touches.length > 0 ? e.touches[0] : e.changedTouches?.[0]);
+      if (!touch) {
+        return { x: 0, y: 0 };
+      }
+
       return {
-        x: e.touches[0].clientX - rect.left,
-        y: e.touches[0].clientY - rect.top,
+        x: touch.clientX - rect.left,
+        y: touch.clientY - rect.top,
       };
     }
     return {
@@ -102,7 +104,7 @@ export const useWhiteboard = (meetingId: string, isHost: boolean, currentUserId:
   };
 
   const startStroke = useCallback(
-    (e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement) => {
+    (e: MouseEvent | TouchEvent, canvas: HTMLCanvasElement) => {
       if (!canDraw) return;
       isDrawingRef.current = true;
       const point = getCoordinates(e, canvas);
@@ -120,7 +122,7 @@ export const useWhiteboard = (meetingId: string, isHost: boolean, currentUserId:
   );
 
   const continueStroke = useCallback(
-    (e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement) => {
+    (e: MouseEvent | TouchEvent, canvas: HTMLCanvasElement) => {
       if (!isDrawingRef.current || !currentStrokeRef.current || !canDraw) return null;
       
       const point = getCoordinates(e, canvas);

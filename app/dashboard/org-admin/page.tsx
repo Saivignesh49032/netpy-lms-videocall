@@ -5,18 +5,29 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import Loader from '@/components/Loader';
-import { Building2, Users, BookOpen, GraduationCap } from 'lucide-react';
+import { Users, BookOpen, GraduationCap } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { getErrorMessage } from '@/lib/utils';
 
 export default function OrgAdminDashboard() {
   const [stats, setStats] = useState({ staff: 0, students: 0, batches: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
+  const router = useRouter();
 
   useEffect(() => {
+    const getJsonOrThrow = async (response: Response) => {
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error ?? response.statusText ?? `Request failed with status ${response.status}`);
+      }
+      return data;
+    };
+
     Promise.all([
-      fetch('/api/directory?role=staff').then(r => r.json()),
-      fetch('/api/directory?role=student').then(r => r.json()),
-      fetch('/api/batches').then(r => r.json()),
+      fetch('/api/directory?role=staff').then(getJsonOrThrow),
+      fetch('/api/directory?role=student').then(getJsonOrThrow),
+      fetch('/api/batches').then(getJsonOrThrow),
     ]).then(([staffData, studentData, batchData]) => {
       setStats({
         staff: staffData.users?.length || 0,
@@ -24,9 +35,9 @@ export default function OrgAdminDashboard() {
         batches: batchData.batches?.length || 0,
       });
     }).catch(err => {
-      toast({ title: 'Error loading data', description: err.message, variant: 'destructive' });
+      toast({ title: 'Error loading data', description: getErrorMessage(err), variant: 'destructive' });
     }).finally(() => setIsLoading(false));
-  }, []);
+  }, [toast]);
 
   if (isLoading) return <div className="flex justify-center p-12"><Loader /></div>;
 
@@ -34,7 +45,7 @@ export default function OrgAdminDashboard() {
     <div className="flex flex-col gap-8">
       <div>
         <h1 className="text-3xl font-bold text-stone-800">Organisation Overview</h1>
-        <p className="text-stone-500 mt-1">Manage your institution's staff, students, and curriculum.</p>
+        <p className="text-stone-500 mt-1">Manage your institution&apos;s staff, students, and curriculum.</p>
       </div>
 
       {/* Stat cards */}
@@ -68,13 +79,13 @@ export default function OrgAdminDashboard() {
           <CardTitle className="text-stone-800">Quick Actions</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
-          <Button variant="outline" className="border-stone-300" onClick={() => window.location.href = '/dashboard/org-admin/staff'}>
+          <Button variant="outline" className="border-stone-300" onClick={() => router.push('/dashboard/org-admin/staff')}>
             <Users className="h-4 w-4 mr-2" /> Manage Staff
           </Button>
-          <Button variant="outline" className="border-stone-300" onClick={() => window.location.href = '/dashboard/org-admin/students'}>
+          <Button variant="outline" className="border-stone-300" onClick={() => router.push('/dashboard/org-admin/students')}>
             <GraduationCap className="h-4 w-4 mr-2" /> Manage Students
           </Button>
-          <Button variant="outline" className="border-stone-300" onClick={() => window.location.href = '/dashboard/org-admin/batches'}>
+          <Button variant="outline" className="border-stone-300" onClick={() => router.push('/dashboard/org-admin/batches')}>
             <BookOpen className="h-4 w-4 mr-2" /> Manage Batches
           </Button>
         </CardContent>

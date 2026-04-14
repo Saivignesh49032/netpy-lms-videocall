@@ -13,11 +13,17 @@ export default function StudentSubjectsPage() {
 
   useEffect(() => {
     fetch('/api/subjects')
-      .then(r => r.json())
+      .then(async (r) => {
+        const data = await r.json().catch(() => null);
+        if (!r.ok) {
+          throw new Error(data?.error ?? r.statusText ?? `Request failed with status ${r.status}`);
+        }
+        return data;
+      })
       .then(d => setSubjects(d.subjects || []))
       .catch(err => toast({ title: 'Error', description: err.message, variant: 'destructive' }))
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [toast]);
 
   if (isLoading) return <div className="flex justify-center p-12"><Loader /></div>;
 

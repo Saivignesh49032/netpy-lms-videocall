@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,11 +14,18 @@ interface Props {
   onCreated?: (meeting: any) => void;
 }
 
+const getLocalDateTimeString = () => {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().slice(0, 16);
+};
+
 export default function MeetingCreationForm({ onClose, onCreated }: Props) {
   const router = useRouter();
   const { toast } = useToast();
 
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [subjectsError, setSubjectsError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [title, setTitle] = useState('');
@@ -28,12 +35,28 @@ export default function MeetingCreationForm({ onClose, onCreated }: Props) {
   const [scheduledAt, setScheduledAt] = useState('');
 
   useEffect(() => {
-    fetch('/api/subjects')
-      .then(r => r.json())
-      .then(d => setSubjects(d.subjects || []));
+    const loadSubjects = async () => {
+      try {
+        setSubjectsError('');
+        const res = await fetch('/api/subjects');
+
+        if (!res.ok) {
+          throw new Error(`Failed to load subjects (${res.status})`);
+        }
+
+        const data = await res.json();
+        setSubjects(data.subjects || []);
+      } catch (error) {
+        console.error('Failed to load subjects:', error);
+        setSubjects([]);
+        setSubjectsError('Could not load subjects. You can still create a meeting without one.');
+      }
+    };
+
+    loadSubjects();
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
@@ -53,6 +76,11 @@ export default function MeetingCreationForm({ onClose, onCreated }: Props) {
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+
+      if (!data.meeting) {
+        toast({ title: 'Error', description: 'Meeting data missing.', variant: 'destructive' });
+        return;
+      }
 
       toast({ title: 'Meeting Created!', description: meetingType === 'instant' ? 'Joining now...' : 'Scheduled successfully.' });
 
@@ -79,7 +107,11 @@ export default function MeetingCreationForm({ onClose, onCreated }: Props) {
             <Video className="h-6 w-6" />
             <h2 className="text-xl font-bold">New Meeting</h2>
           </div>
-          <button onClick={onClose} className="text-white/80 hover:text-white transition-colors">
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="text-white/80 hover:text-white transition-colors"
+          >
             <X className="h-6 w-6" />
           </button>
         </div>
@@ -133,6 +165,7 @@ export default function MeetingCreationForm({ onClose, onCreated }: Props) {
                 <option key={s.id} value={s.id}>{s.code ? `[${s.code}] ` : ''}{s.name}</option>
               ))}
             </select>
+            {subjectsError && <p className="mt-1 text-xs text-amber-600">{subjectsError}</p>}
           </div>
 
           {/* Description */}
@@ -155,7 +188,7 @@ export default function MeetingCreationForm({ onClose, onCreated }: Props) {
                 value={scheduledAt}
                 onChange={e => setScheduledAt(e.target.value)}
                 disabled={isSubmitting}
-                min={new Date().toISOString().slice(0, 16)}
+                min={getLocalDateTimeString()}
               />
             </div>
           )}

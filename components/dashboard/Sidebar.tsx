@@ -11,11 +11,16 @@ const routeConfig = {
     { label: 'Overview', route: '/dashboard/super-admin', icon: LayoutDashboard },
     { label: 'Organisations', route: '/dashboard/super-admin/organisations', icon: BookOpen },
     { label: 'Platform Users', route: '/dashboard/super-admin/users', icon: Users },
-    { label: 'All Meetings', route: '/dashboard/super-admin/meetings', icon: Video },
+    { label: 'Meetings', route: '/dashboard/super-admin/meetings', icon: Video },
+    { label: 'Schedule', route: '/dashboard/super-admin/schedule', icon: Calendar },
+    { label: 'Recordings', route: '/dashboard/super-admin/recordings', icon: FileText },
     { label: 'Settings', route: '/dashboard/super-admin/settings', icon: Settings },
   ],
   org_admin: [
     { label: 'Overview', route: '/dashboard/org-admin', icon: LayoutDashboard },
+    { label: 'Meetings', route: '/dashboard/org-admin/meetings', icon: Video },
+    { label: 'Schedule', route: '/dashboard/org-admin/schedule', icon: Calendar },
+    { label: 'Recordings', route: '/dashboard/org-admin/recordings', icon: FileText },
     { label: 'Staff Directory', route: '/dashboard/org-admin/staff', icon: UserPlus },
     { label: 'Students', route: '/dashboard/org-admin/students', icon: Users },
     { label: 'Batches / Classes', route: '/dashboard/org-admin/batches', icon: BookOpen },
@@ -67,7 +72,7 @@ export function Sidebar() {
       <div className="flex flex-1 flex-col gap-4">
         <h2 className="text-xs uppercase tracking-widest font-bold opacity-50 mb-4 px-2">Navigation</h2>
         {links.map((link) => {
-          const isActive = pathname === link.route || pathname?.startsWith(`${link.route}/`);
+          const isActive = pathname === link.route;
           const Icon = link.icon;
 
           return (

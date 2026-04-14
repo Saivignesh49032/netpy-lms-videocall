@@ -1,61 +1,68 @@
 import { NextResponse } from 'next/server';
+
 import { createClient } from '@/lib/supabase/server';
-import { createClient as createAdminClient } from '@supabase/supabase-js';
-import { validateToken, markTokenUsed } from '@/lib/invite';
+import { createAdminClient } from '@/lib/supabase/admin';
 
 export async function POST(request: Request) {
   try {
     const supabase = createClient();
-    // 1. Get the currently authenticated user (they just signed up via auth)
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
       return NextResponse.json({ error: 'You must be authenticated with Supabase first.' }, { status: 401 });
     }
 
-    const { token, fullName } = await request.json();
-    if (!token) return NextResponse.json({ error: 'Token missing' }, { status: 400 });
+    let body: unknown;
 
-    // 2. Validate token
-    const tokenCheck = await validateToken(token);
-    if (!tokenCheck.valid || !tokenCheck.data) {
-      return NextResponse.json({ error: tokenCheck.error }, { status: 400 });
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
     }
 
-    const inviteData = tokenCheck.data;
+    const { token, fullName } = body as Partial<{ token: string; fullName: string }>;
 
-    // Security check: Make sure the email they signed up with matches the invite email
-    if (user.email !== inviteData.email) {
-      return NextResponse.json({ error: 'Auth email does not match invite email' }, { status: 400 });
+    if (typeof token !== 'string' || token.trim().length === 0) {
+      return NextResponse.json({ error: 'Token missing' }, { status: 400 });
     }
 
-    const adminDb = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    if (typeof fullName !== 'string' || fullName.trim().length === 0) {
+      return NextResponse.json({ error: 'Full name is required' }, { status: 400 });
+    }
 
-    // 3. Insert into users table
-    const { error: insertError } = await adminDb
-      .from('users')
-      .insert({
-        id: user.id,
+    if (!user.email) {
+      return NextResponse.json({ error: 'Authenticated user email is missing' }, { status: 400 });
+    }
+
+    const adminDb = createAdminClient();
+    const { error: rpcError } = await adminDb.rpc('consume_invite_token_and_create_user_profile', {
+      p_token: token.trim(),
+      p_user_id: user.id,
+      p_email: user.email,
+      p_full_name: fullName.trim(),
+    });
+
+    if (rpcError) {
+      console.error('Invite acceptance failed:', {
+        userId: user.id,
         email: user.email,
-        full_name: fullName,
-        role: inviteData.role,
-        org_id: inviteData.org_id,
-        invited_by: inviteData.invited_by
+        error: rpcError,
       });
 
-    if (insertError) {
-      return NextResponse.json({ error: 'Failed to create user profile: ' + insertError.message }, { status: 500 });
+      const isClientError =
+        rpcError.message?.includes('Invalid or expired token') ||
+        rpcError.message?.includes('duplicate key');
+
+      return NextResponse.json(
+        { error: isClientError ? 'Failed to create user profile' : 'Internal server error' },
+        { status: isClientError ? 400 : 500 }
+      );
     }
 
-    // 4. Mark token as used
-    await markTokenUsed(inviteData.id);
-
     return NextResponse.json({ success: true, message: 'Invite accepted successfully' });
-
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (error) {
+    const normalizedError = error instanceof Error ? error : new Error(String(error));
+    console.error('Invite accept route failed:', normalizedError);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

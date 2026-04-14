@@ -1,7 +1,6 @@
 'use client';
 
-import { Suspense } from 'react';
-import { useState } from 'react';
+import { Suspense, useState, type FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -9,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { Building2, KeyRound } from 'lucide-react';
 import Loader from '@/components/Loader';
+import { getErrorMessage } from '@/lib/utils';
 
 function InviteForm() {
   const searchParams = useSearchParams();
@@ -31,7 +31,7 @@ function InviteForm() {
     );
   }
 
-  const handleAccept = async (e: React.FormEvent) => {
+  const handleAccept = async (e: FormEvent) => {
     e.preventDefault();
     if (!password.trim() || !fullName.trim()) return;
 
@@ -40,11 +40,6 @@ function InviteForm() {
     const supabase = createClient();
 
     try {
-      // Read invite info first secretly? No wait, users create their account via auth using token validation inside
-      // But wait we need their email?! 
-      // Supabase Signup requires email. Let's ask them to enter it, or fetch it.
-      // Better: we can validate the token via API first to retrieve the email, then auth.signUp them.
-      
       const valRes = await fetch('/api/invites', { 
         method: 'PATCH', // custom method just to validate without consuming?
         headers: { 'Content-Type': 'application/json' },
@@ -55,7 +50,7 @@ function InviteForm() {
       const email = valData.invite.email;
 
       // Register the user with Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const { error: authError } = await supabase.auth.signUp({
         email,
         password,
       });
@@ -68,20 +63,35 @@ function InviteForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, fullName }),
       });
-      const confirmData = await confirmRes.json();
+      const confirmData = await confirmRes.json().catch(() => null);
       
-      if (!confirmRes.ok) throw new Error(confirmData.error);
+      if (!confirmRes.ok) {
+        try {
+          const cleanupRes = await fetch('/api/auth/delete-user', { method: 'POST' });
+          if (!cleanupRes.ok) {
+            console.error('Failed to clean up orphaned auth user after invite confirmation error.');
+          }
+        } catch (cleanupError) {
+          console.error('Failed to clean up orphaned auth user:', cleanupError);
+        }
+
+        throw new Error(confirmData?.error || 'Failed to confirm invite.');
+      }
 
       toast({ title: 'Welcome to Netpy LMS!' });
       
       // Attempt login immediately
-      await supabase.auth.signInWithPassword({ email, password });
-      
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError || !signInData.user) {
+        throw signInError ?? new Error('Unable to sign in after accepting the invite.');
+      }
+
       router.push('/dashboard');
 
-    } catch (err: any) {
-      setErrorObj(err.message);
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } catch (err) {
+      const message = getErrorMessage(err, 'Failed to accept invitation.');
+      setErrorObj(message);
+      toast({ title: 'Error', description: message, variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }

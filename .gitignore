@@ -27,6 +27,7 @@ yarn-error.log*
 
 # local env files
 .env*.local
+.env
 
 # vercel
 .vercel
@@ -35,8 +36,13 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# editor
 .vscode
+.idea
 
-.env
+# sensitive / credential files
 *.txt
 supabase_api_keys*.txt
+
+# scratch / dev debug scripts (not part of core project)
+/scratch

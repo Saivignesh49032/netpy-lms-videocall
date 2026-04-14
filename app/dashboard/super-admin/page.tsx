@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Building2, Copy, ShieldCheck, Users } from 'lucide-react';
+
+import Loader from '@/components/Loader';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
-import Loader from '@/components/Loader';
-import { Copy, Building2, Users, ShieldCheck } from 'lucide-react';
 
 const ROLE_BADGE: Record<string, string> = {
   super_admin: 'bg-purple-100 text-purple-800',
@@ -18,10 +19,9 @@ const ROLE_BADGE: Record<string, string> = {
 export default function SuperAdminDashboard() {
   const [stats, setStats] = useState({ orgs: 0, users: 0 });
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [users, setUsers] = useState<any[]>([]);
   const [orgs, setOrgs] = useState<any[]>([]);
-
-  // Invite super admin
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteOrgId, setInviteOrgId] = useState('');
   const [isInviting, setIsInviting] = useState(false);
@@ -29,112 +29,152 @@ export default function SuperAdminDashboard() {
   const { toast } = useToast();
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/users').then(r => r.json()),
-      fetch('/api/organisations').then(r => r.json()),
-    ]).then(([ud, od]) => {
-      setUsers(ud.users || []);
-      setOrgs(od.organisations || []);
-      setStats({ orgs: od.organisations?.length || 0, users: ud.users?.length || 0 });
-    }).finally(() => setIsLoading(false));
-  }, []);
+    const getJsonOrThrow = async (response: Response) => {
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error ?? response.statusText ?? `Request failed with status ${response.status}`);
+      }
+      return data;
+    };
 
-  const handleInviteAdmin = async (e: React.FormEvent) => {
+    Promise.all([
+      fetch('/api/users').then(getJsonOrThrow),
+      fetch('/api/organisations').then(getJsonOrThrow),
+    ])
+      .then(([usersData, orgData]) => {
+        setUsers(usersData.users || []);
+        setOrgs(orgData.organisations || []);
+        setStats({
+          orgs: orgData.organisations?.length || 0,
+          users: usersData.users?.length || 0,
+        });
+        setLoadError('');
+      })
+      .catch((error) => {
+        console.error('Failed to load super admin dashboard data:', error);
+        const message = error instanceof Error ? error.message : 'Failed to load dashboard data.';
+        setLoadError(message);
+        toast({ title: 'Error', description: message, variant: 'destructive' });
+      })
+      .finally(() => setIsLoading(false));
+  }, [toast]);
+
+  const handleInviteAdmin = async (e: FormEvent) => {
     e.preventDefault();
     if (!inviteEmail || !inviteOrgId) return;
+
     setIsInviting(true);
     setInviteLink('');
+
     try {
       const res = await fetch('/api/invites', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: inviteEmail, role: 'super_admin', orgId: inviteOrgId }),
+        body: JSON.stringify({ email: inviteEmail, role: 'org_admin', orgId: inviteOrgId }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setInviteLink(data.inviteUrl);
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(data?.error ?? 'Failed to create invite');
+      }
+
+      const fullInviteLink = `${window.location.origin}${data.inviteUrl}`;
+      setInviteLink(fullInviteLink);
       toast({ title: 'Invite created!', description: 'Copy the link below and share it securely.' });
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to create invite.',
+        variant: 'destructive',
+      });
     } finally {
       setIsInviting(false);
     }
   };
 
-  const copyLink = () => {
-    navigator.clipboard.writeText(inviteLink);
-    toast({ title: 'Copied!', description: 'Invite link copied to clipboard.' });
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      toast({ title: 'Copied!', description: 'Invite link copied to clipboard.' });
+    } catch (error) {
+      console.error('Failed to copy invite link:', error);
+      toast({ title: 'Copy failed', description: 'Could not copy invite link.', variant: 'destructive' });
+    }
   };
 
-  if (isLoading) return <div className="flex justify-center p-12"><Loader /></div>;
+  if (isLoading) {
+    return <div className="flex justify-center p-12"><Loader /></div>;
+  }
 
   return (
     <div className="flex flex-col gap-8">
-      {/* Header */}
       <div>
         <h1 className="text-3xl font-bold text-slate-100">Platform Overview</h1>
-        <p className="text-slate-400 mt-1">Super Admin — full platform visibility and control.</p>
+        <p className="mt-1 text-slate-400">Super Admin - full platform visibility and control.</p>
+        {loadError && <p className="mt-2 text-sm text-red-300">{loadError}</p>}
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 flex items-center gap-4">
-          <div className="bg-purple-500/20 p-3 rounded-lg"><ShieldCheck className="text-purple-400 h-6 w-6" /></div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="flex items-center gap-4 rounded-xl border border-slate-700 bg-slate-800 p-6">
+          <div className="rounded-lg bg-purple-500/20 p-3"><ShieldCheck className="h-6 w-6 text-purple-400" /></div>
           <div>
-            <p className="text-slate-400 text-sm">Super Admins</p>
-            <p className="text-3xl font-bold text-white">{users.filter(u => u.role === 'super_admin').length}</p>
+            <p className="text-sm text-slate-400">Super Admins</p>
+            <p className="text-3xl font-bold text-white">{users.filter((user) => user.role === 'super_admin').length}</p>
           </div>
         </div>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 flex items-center gap-4">
-          <div className="bg-blue-500/20 p-3 rounded-lg"><Building2 className="text-blue-400 h-6 w-6" /></div>
+        <div className="flex items-center gap-4 rounded-xl border border-slate-700 bg-slate-800 p-6">
+          <div className="rounded-lg bg-blue-500/20 p-3"><Building2 className="h-6 w-6 text-blue-400" /></div>
           <div>
-            <p className="text-slate-400 text-sm">Organisations</p>
+            <p className="text-sm text-slate-400">Organisations</p>
             <p className="text-3xl font-bold text-white">{stats.orgs}</p>
           </div>
         </div>
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 flex items-center gap-4">
-          <div className="bg-emerald-500/20 p-3 rounded-lg"><Users className="text-emerald-400 h-6 w-6" /></div>
+        <div className="flex items-center gap-4 rounded-xl border border-slate-700 bg-slate-800 p-6">
+          <div className="rounded-lg bg-emerald-500/20 p-3"><Users className="h-6 w-6 text-emerald-400" /></div>
           <div>
-            <p className="text-slate-400 text-sm">Total Users</p>
+            <p className="text-sm text-slate-400">Total Users</p>
             <p className="text-3xl font-bold text-white">{stats.users}</p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* All users table */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <Card className="bg-slate-800 border-slate-700 text-slate-100">
+          <Card className="border-slate-700 bg-slate-800 text-slate-100">
             <CardHeader>
               <CardTitle className="text-slate-100">All Platform Users</CardTitle>
             </CardHeader>
             <CardContent>
               {users.length === 0 ? (
-                <p className="text-slate-500 text-sm">No users yet.</p>
+                <p className="text-sm text-slate-500">No users yet.</p>
               ) : (
                 <div className="overflow-x-auto rounded-lg border border-slate-700">
                   <table className="min-w-full divide-y divide-slate-700">
                     <thead className="bg-slate-900">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Name</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Email</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Role</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Org</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-400">Name</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-400">Email</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-400">Role</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-400">Org</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-700">
-                      {users.map((u: any) => (
-                        <tr key={u.id} className="hover:bg-slate-700/50">
-                          <td className="px-4 py-3 text-sm text-slate-200">{u.full_name || '—'}</td>
-                          <td className="px-4 py-3 text-sm text-slate-400">{u.email}</td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_BADGE[u.role] || ''}`}>
-                              {u.role?.replace('_', ' ')}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-slate-400">{u.organisations?.name || '—'}</td>
-                        </tr>
-                      ))}
+                      {users.map((user: any) => {
+                        const safeRole = user.role ? user.role.replace(/_/g, ' ') : '';
+
+                        return (
+                          <tr key={user.id} className="hover:bg-slate-700/50">
+                            <td className="px-4 py-3 text-sm text-slate-200">{user.full_name || '—'}</td>
+                            <td className="px-4 py-3 text-sm text-slate-400">{user.email}</td>
+                            <td className="px-4 py-3">
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ROLE_BADGE[user.role] || ''}`}>
+                                {safeRole}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-slate-400">{user.organisations?.name || '—'}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -143,36 +183,37 @@ export default function SuperAdminDashboard() {
           </Card>
         </div>
 
-        {/* Invite Super Admin panel */}
         <div className="flex flex-col gap-4">
-          <Card className="bg-slate-800 border-slate-700 text-slate-100">
+          <Card className="border-slate-700 bg-slate-800 text-slate-100">
             <CardHeader>
-              <CardTitle className="text-slate-100">Invite Super Admin</CardTitle>
+              <CardTitle className="text-slate-100">Invite Org Admin</CardTitle>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleInviteAdmin} className="space-y-4">
                 <div>
-                  <label className="text-sm text-slate-400 mb-1 block">Email</label>
+                  <label htmlFor="invite-email" className="mb-1 block text-sm text-slate-400">Email</label>
                   <Input
+                    id="invite-email"
                     type="email"
                     placeholder="admin@platform.com"
                     value={inviteEmail}
-                    onChange={e => setInviteEmail(e.target.value)}
-                    className="bg-slate-700 border-slate-600 text-white placeholder:text-slate-500"
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    className="border-slate-600 bg-slate-700 text-white placeholder:text-slate-500"
                     disabled={isInviting}
                   />
                 </div>
                 <div>
-                  <label className="text-sm text-slate-400 mb-1 block">Organisation</label>
+                  <label htmlFor="invite-org" className="mb-1 block text-sm text-slate-400">Organisation</label>
                   <select
+                    id="invite-org"
                     value={inviteOrgId}
-                    onChange={e => setInviteOrgId(e.target.value)}
-                    className="w-full rounded-md bg-slate-700 border border-slate-600 text-white px-3 py-2 text-sm"
+                    onChange={(e) => setInviteOrgId(e.target.value)}
+                    className="w-full rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-white"
                     disabled={isInviting}
                   >
                     <option value="">Select an org...</option>
-                    {orgs.map((o: any) => (
-                      <option key={o.id} value={o.id}>{o.name}</option>
+                    {orgs.map((org: any) => (
+                      <option key={org.id} value={org.id}>{org.name}</option>
                     ))}
                   </select>
                 </div>
@@ -182,11 +223,11 @@ export default function SuperAdminDashboard() {
               </form>
 
               {inviteLink && (
-                <div className="mt-4 p-3 bg-slate-900 rounded-lg border border-slate-700">
-                  <p className="text-xs text-slate-400 mb-2">Share this link securely:</p>
-                  <p className="text-xs text-emerald-400 break-all mb-3">{inviteLink}</p>
+                <div className="mt-4 rounded-lg border border-slate-700 bg-slate-900 p-3">
+                  <p className="mb-2 text-xs text-slate-400">Share this link securely:</p>
+                  <p className="mb-3 break-all text-xs text-emerald-400">{inviteLink}</p>
                   <Button size="sm" variant="outline" className="w-full border-slate-600" onClick={copyLink}>
-                    <Copy className="h-4 w-4 mr-2" /> Copy Link
+                    <Copy className="mr-2 h-4 w-4" /> Copy Link
                   </Button>
                 </div>
               )}

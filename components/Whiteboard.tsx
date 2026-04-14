@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useWhiteboard, Stroke } from '@/hooks/useWhiteboard';
 import { useCallStateHooks } from '@stream-io/video-react-sdk';
 import { Button } from './ui/button';
@@ -62,6 +62,7 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ meetingId, isHost, currentUserI
   const participants = useParticipants();
 
   const [showPermissions, setShowPermissions] = useState(false);
+  const [resizeTick, setResizeTick] = useState(0);
 
   // Redraw all strokes whenever they change
   useEffect(() => {
@@ -79,9 +80,9 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ meetingId, isHost, currentUserI
 
     // Draw all completed/synced strokes
     strokes.forEach(stroke => drawStroke(ctx, stroke));
-  }, [strokes]);
+  }, [resizeTick, strokes]);
 
-  // Handle Resize securely by saving snapshot
+  // Resize the canvas and let the redraw effect repaint from stroke state.
   useEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
@@ -89,25 +90,10 @@ const Whiteboard: React.FC<WhiteboardProps> = ({ meetingId, isHost, currentUserI
 
     const resizeObserver = new ResizeObserver(() => {
       const { width, height } = container.getBoundingClientRect();
-      
-      // Save snapshot
-      const snapshot = canvas.toDataURL();
-      
+
       canvas.width = width;
       canvas.height = height;
-
-      // Restore snapshot
-      const img = new Image();
-      img.src = snapshot;
-      img.onload = () => {
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          // Fill background white fresh
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0);
-        }
-      };
+      setResizeTick((value) => value + 1);
     });
 
     resizeObserver.observe(container);

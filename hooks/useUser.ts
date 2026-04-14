@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { User } from '@supabase/supabase-js';
 import { Role } from '@/lib/permissions';
 
 export type UserProfile = {
@@ -36,13 +35,19 @@ export const useUser = () => {
         }
 
         const authUser = session.user;
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('users')
           .select('*')
           .eq('id', authUser.id)
           .single();
 
         if (!isMounted) return;
+
+        if (error && error.code !== 'PGRST116') {
+          console.error('Failed to fetch user profile:', error);
+          setProfile(null);
+          return;
+        }
 
         if (data) {
           // Exists in DB

@@ -1,8 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRole } from '@/hooks/useRole';
+
+export interface Reply {
+  id: string;
+  question_id: string;
+  replied_by: string;
+  text: string;
+  created_at: string;
+  users?: { full_name?: string; email?: string };
+}
 
 export interface Question {
   id: string;
@@ -17,27 +26,21 @@ export interface Question {
   question_replies?: Reply[];
 }
 
-export interface Reply {
-  id: string;
-  question_id: string;
-  replied_by: string;
-  text: string;
-  created_at: string;
-  users?: { full_name?: string; email?: string };
-}
-
 export function useQA(callId: string) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [meetingId, setMeetingId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { user, isStaffOrAbove } = useRole();
-  const supabase = createClient();
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const supabase = useMemo(() => createClient(), []);
 
   const fetchQuestions = useCallback(async () => {
     if (!callId) return;
     try {
-      const res = await fetch(`/api/questions?callId=${callId}`);
+      const res = await fetch(`/api/questions?callId=${encodeURIComponent(callId)}`);
+      if (!res.ok) {
+        throw new Error(`Failed to load questions (${res.status})`);
+      }
+
       const data = await res.json();
       setQuestions(data.questions || []);
       if (data.meetingId) setMeetingId(data.meetingId);
@@ -48,58 +51,96 @@ export function useQA(callId: string) {
     }
   }, [callId]);
 
-  // Initial load + realtime subscription
   useEffect(() => {
     fetchQuestions();
+  }, [fetchQuestions]);
 
-    // Subscribe to Supabase Realtime for live updates
-    const channel = supabase
-      .channel(`qa-${callId}`)
-      .on('postgres_changes', {
+  useEffect(() => {
+    if (!meetingId) return;
+
+    const questionIds = questions.map((question) => question.id).filter(Boolean);
+    const channel = supabase.channel(`qa-${callId}`);
+
+    channel.on(
+      'postgres_changes',
+      {
         event: '*',
         schema: 'public',
         table: 'questions',
-      }, () => fetchQuestions())
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'question_replies',
-      }, () => fetchQuestions())
-      .subscribe();
+        filter: `meeting_id=eq.${meetingId}`,
+      },
+      () => fetchQuestions()
+    );
 
-    channelRef.current = channel;
+    if (questionIds.length > 0) {
+      channel.on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'question_replies',
+          filter: `question_id=in.(${questionIds.join(',')})`,
+        },
+        () => fetchQuestions()
+      );
+    }
+
+    channel.subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [callId, fetchQuestions]);
+  }, [callId, fetchQuestions, meetingId, questions, supabase]);
 
   const postQuestion = async (text: string) => {
     if (!meetingId || !text.trim()) return;
-    await fetch('/api/questions', {
+    const res = await fetch('/api/questions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ meetingId, text }),
     });
-    // Realtime will refetch; no need for manual update
+
+    if (!res.ok) {
+      throw new Error(`Failed to post question (${res.status})`);
+    }
   };
 
   const performAction = async (questionId: string, action: 'upvote' | 'pin' | 'answer') => {
-    await fetch('/api/questions', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ questionId, action }),
-    });
+    try {
+      const res = await fetch('/api/questions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionId, action }),
+      });
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error ?? `Failed to ${action} question`);
+      }
+
+      return data;
+    } catch (error) {
+      console.error(`Failed to ${action} question:`, error);
+      throw error;
+    }
   };
 
   const postReply = async (questionId: string, text: string) => {
     if (!text.trim()) return;
-    const supabase = createClient();
-    await supabase.from('question_replies').insert({
+    if (!user?.id) {
+      throw new Error('You must be signed in to reply.');
+    }
+
+    const { error } = await supabase.from('question_replies').insert({
       question_id: questionId,
       replied_by: user?.id,
       text,
     });
+
+    if (error) {
+      console.error('Failed to post reply:', error);
+      throw new Error('Failed to post reply');
+    }
   };
 
   return {

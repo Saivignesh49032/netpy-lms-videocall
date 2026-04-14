@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,7 +19,7 @@ export default function OrganisationsPage() {
       const res = await fetch('/api/organisations');
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setOrgs(data.organisations);
+      setOrgs(Array.isArray(data.organisations) ? data.organisations : []);
     } catch (err: any) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     } finally {
@@ -31,7 +31,7 @@ export default function OrganisationsPage() {
     fetchOrgs();
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
     if (!newOrgName.trim()) return;
     
@@ -112,8 +112,9 @@ export default function OrganisationsPage() {
             <CardContent>
               <form onSubmit={handleCreate} className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium block mb-1">Organisation Name</label>
+                  <label htmlFor="organisation-name" className="text-sm font-medium block mb-1">Organisation Name</label>
                   <Input 
+                    id="organisation-name"
                     placeholder="e.g. Harvard University" 
                     value={newOrgName} 
                     onChange={(e) => setNewOrgName(e.target.value)}

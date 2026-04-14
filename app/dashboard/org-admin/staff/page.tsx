@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ export default function StaffDirectoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [email, setEmail] = useState('');
+  const [latestInviteLink, setLatestInviteLink] = useState('');
   const { toast } = useToast();
 
   const fetchDirectory = async () => {
@@ -30,7 +31,7 @@ export default function StaffDirectoryPage() {
 
   useEffect(() => { fetchDirectory(); }, []);
 
-  const handleInvite = async (e: React.FormEvent) => {
+  const handleInvite = async (e: FormEvent) => {
     e.preventDefault();
     if (!email) return;
 
@@ -46,6 +47,7 @@ export default function StaffDirectoryPage() {
       if (!res.ok) throw new Error(resData.error);
       
       toast({ title: 'Invite Created', description: 'The invite link is ready below.' });
+      setLatestInviteLink(`${window.location.origin}${resData.inviteUrl}`);
       setEmail('');
       fetchDirectory();
     } catch (err: any) {
@@ -55,9 +57,14 @@ export default function StaffDirectoryPage() {
     }
   };
 
-  const copyLink = (token: string) => {
-    navigator.clipboard.writeText(`${window.location.origin}/invite/accept?token=${token}`);
-    toast({ title: 'Copied!', description: 'Invite link copied to clipboard.' });
+  const copyLink = async (link: string) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      toast({ title: 'Copied!', description: 'Invite link copied to clipboard.' });
+    } catch (error) {
+      console.error('Failed to copy invite link:', error);
+      toast({ title: 'Copy failed', description: 'Could not copy invite link.', variant: 'destructive' });
+    }
   };
 
   if (isLoading) return <div className="p-8 flex justify-center"><Loader /></div>;
@@ -66,7 +73,7 @@ export default function StaffDirectoryPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-3xl font-bold">Staff Directory</h1>
-        <p className="text-gray-500">Manage teaching staff and generation invitation links.</p>
+        <p className="text-gray-500">Manage teaching staff and generating invitation links.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -110,11 +117,6 @@ export default function StaffDirectoryPage() {
                             <span className="font-medium text-sm">{inv.email}</span>
                             <span className="text-xs text-stone-400">Expires: {new Date(inv.expires_at).toLocaleDateString()}</span>
                           </td>
-                          <td className="px-6 py-4 text-right">
-                            <Button size="sm" variant="outline" onClick={() => copyLink(inv.token)}>
-                              <Copy className="h-4 w-4 mr-2" /> Copy Link
-                            </Button>
-                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -138,6 +140,16 @@ export default function StaffDirectoryPage() {
                   {isSubmitting ? 'Generating...' : 'Generate Invite Link'}
                 </Button>
               </form>
+
+              {latestInviteLink && (
+                <div className="mt-4 rounded border bg-gray-50 p-3">
+                  <p className="mb-2 text-xs text-gray-500">Latest invite link</p>
+                  <p className="break-all text-xs text-gray-700">{latestInviteLink}</p>
+                  <Button size="sm" variant="outline" className="mt-3 w-full" onClick={() => copyLink(latestInviteLink)}>
+                    <Copy className="h-4 w-4 mr-2" /> Copy Link
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

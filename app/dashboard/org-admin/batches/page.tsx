@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,16 +30,18 @@ export default function BatchesPage() {
 
   useEffect(() => { fetchBatches(); }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    const trimmedName = name.trim();
+    const trimmedDescription = description.trim();
+    if (!trimmedName) return;
     
     setIsSubmitting(true);
     try {
       const res = await fetch('/api/batches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description }),
+        body: JSON.stringify({ name: trimmedName, description: trimmedDescription }),
       });
       const data = await res.json();
       
@@ -112,8 +114,9 @@ export default function BatchesPage() {
             <CardContent>
               <form onSubmit={handleCreate} className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium block mb-1">Batch Name</label>
+                  <label htmlFor="batch-name" className="text-sm font-medium block mb-1">Batch Name</label>
                   <Input 
+                    id="batch-name"
                     placeholder="e.g. CS101 Section A" 
                     value={name} 
                     onChange={(e) => setName(e.target.value)}
@@ -121,8 +124,9 @@ export default function BatchesPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium block mb-1">Description (Optional)</label>
+                  <label htmlFor="batch-description" className="text-sm font-medium block mb-1">Description (Optional)</label>
                   <Input 
+                    id="batch-description"
                     placeholder="Brief details about the cohort" 
                     value={description} 
                     onChange={(e) => setDescription(e.target.value)}

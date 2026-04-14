@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     // RLS handles the isolation logic natively, so we just select from users
     const { data: users, error: usersError } = await supabase
       .from('users')
-      .select('id, full_name, email, role, joined_at, is_active')
+      .select('id, full_name, email, role, org_id, joined_at, is_active')
       .in('role', roles)
       .order('joined_at', { ascending: false });
 
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     // Fetch invites
     const { data: invites, error: invitesError } = await supabase
       .from('invite_tokens')
-      .select('id, email, role, created_at, expires_at, used_at, token')
+      .select('id, email, role, created_at, expires_at, used_at')
       .in('role', roles)
       .order('created_at', { ascending: false });
 
@@ -34,6 +34,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ users, invites });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('Directory route failed:', err);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

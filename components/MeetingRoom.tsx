@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   CallParticipantsList,
   CallStatsButton,
@@ -34,7 +34,6 @@ import QAPanel from './QAPanel';
 import { cn } from '@/lib/utils';
 import { useRole } from '@/hooks/useRole';
 import { useToast } from './ui/use-toast';
-import { useEffect } from 'react';
 
 type CallLayoutType = 'grid' | 'speaker-left' | 'speaker-right';
 
@@ -47,13 +46,12 @@ const MeetingRoom = () => {
   const [showChat, setShowChat] = useState(false);
   const [showWhiteboard, setShowWhiteboard] = useState(false);
   const [showQA, setShowQA] = useState(false);
-  const { useCallCallingState, useLocalParticipant } = useCallStateHooks();
+  const { useCallCallingState } = useCallStateHooks();
   const { user, isStaffOrAbove } = useRole();
   const { toast } = useToast();
 
   // for more detail about types of CallingState see: https://getstream.io/video/docs/react/ui-cookbook/ringing-call/#incoming-call-panel
   const callingState = useCallCallingState();
-  const localParticipant = useLocalParticipant();
   const call = useCall();
   
   const isMeetingOwner = isStaffOrAbove;
@@ -117,12 +115,18 @@ const MeetingRoom = () => {
       <div className="relative flex size-full items-center justify-center">
         {showWhiteboard ? (
           <div className="flex size-full items-center p-4">
-            <Whiteboard 
-              meetingId={call?.id ?? ''}
-              isHost={isMeetingOwner}
-              currentUserId={user?.id ?? ''}
-              currentUserName={user?.username ?? ''}
-            />
+            {user?.id && user?.username ? (
+              <Whiteboard 
+                meetingId={call?.id ?? ''}
+                isHost={isMeetingOwner}
+                currentUserId={user.id}
+                currentUserName={user.username}
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center rounded-lg bg-white text-slate-600">
+                Whiteboard is unavailable until your profile finishes loading.
+              </div>
+            )}
           </div>
         ) : (
           <div className=" flex size-full max-w-[1000px] items-center">

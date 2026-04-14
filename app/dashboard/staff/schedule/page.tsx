@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/components/ui/use-toast';
 import Loader from '@/components/Loader';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Calendar, Clock } from 'lucide-react';
+import { getErrorMessage } from '@/lib/utils';
 
 export default function StaffSchedulePage() {
   const [meetings, setMeetings] = useState<any[]>([]);
@@ -15,12 +16,12 @@ export default function StaffSchedulePage() {
     try {
       const res = await fetch('/api/meetings');
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) throw new Error(data?.error ?? res.statusText ?? `Request failed with status ${res.status}`);
       // Show only scheduled upcoming
       const upcoming = (data.meetings || []).filter((m: any) => m.status === 'scheduled');
       setMeetings(upcoming);
-    } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } catch (err) {
+      toast({ title: 'Error', description: getErrorMessage(err), variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -45,21 +46,29 @@ export default function StaffSchedulePage() {
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {meetings.map(m => (
-            <Card key={m.id} className="bg-white border-emerald-100">
-              <CardContent className="pt-5 flex items-center justify-between">
-                <div className="flex flex-col gap-1">
-                  <p className="font-semibold text-gray-900">{m.title}</p>
-                  {m.subjects?.name && <p className="text-sm text-emerald-600">{m.subjects.name}</p>}
-                  <span className="flex items-center gap-1.5 text-xs text-gray-400 mt-1">
-                    <Clock className="h-3.5 w-3.5" />
-                    {new Date(m.scheduled_at).toLocaleString()}
-                  </span>
-                </div>
-                <span className="bg-blue-100 text-blue-700 text-xs px-3 py-1 rounded-full font-medium">Scheduled</span>
-              </CardContent>
-            </Card>
-          ))}
+          {meetings.map(m => {
+            const scheduledDate = m.scheduled_at ? new Date(m.scheduled_at) : null;
+            const formattedScheduledAt =
+              scheduledDate && !Number.isNaN(scheduledDate.getTime())
+                ? scheduledDate.toLocaleString()
+                : 'TBD';
+
+            return (
+              <Card key={m.id} className="bg-white border-emerald-100">
+                <CardContent className="pt-5 flex items-center justify-between">
+                  <div className="flex flex-col gap-1">
+                    <p className="font-semibold text-gray-900">{m.title}</p>
+                    {m.subjects?.name && <p className="text-sm text-emerald-600">{m.subjects.name}</p>}
+                    <span className="flex items-center gap-1.5 text-xs text-gray-400 mt-1">
+                      <Clock className="h-3.5 w-3.5" />
+                      {formattedScheduledAt}
+                    </span>
+                  </div>
+                  <span className="bg-blue-100 text-blue-700 text-xs px-3 py-1 rounded-full font-medium">Scheduled</span>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>
