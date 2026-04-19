@@ -86,7 +86,9 @@ export async function POST() {
       }
 
       for (const rec of recordings) {
-        const fileKey = rec.url ?? rec.filename ?? `${callId}/${rec.session_id || 'recording'}.mp4`;
+        const rawUrl = rec.url ?? rec.filename ?? `recordings/${callId}/${rec.session_id || 'recording'}.mp4`;
+        const fileKey = rawUrl.split('?')[0]; // Strip query params for stable key
+        const sessionId = rec.session_id ?? null;
         
         let durationSeconds: number | null = null;
         if (rec.start_time && rec.end_time) {
@@ -97,12 +99,18 @@ export async function POST() {
           }
         }
 
-        // Check if already saved
-        const { data: existing, error: existErr } = await adminDb
+        // Check if already saved (by session_id or file_key)
+        const { data: matched, error: existErr } = await adminDb
           .from('recordings')
           .select('id')
-          .eq('file_key', fileKey)
-          .maybeSingle();
+          .or(
+            sessionId
+              ? `stream_recording_id.eq.${encodeURIComponent(sessionId)},file_key.eq.${encodeURIComponent(fileKey)}`
+              : `file_key.eq.${encodeURIComponent(fileKey)}`
+          )
+          .limit(1);
+
+        const existing = matched && matched.length > 0 ? matched[0] : null;
 
         if (existErr || existing) { 
           if (existErr) console.error(`[Sync] DB error checking existing recording:`, existErr);

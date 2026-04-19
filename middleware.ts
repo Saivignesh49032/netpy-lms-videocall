@@ -29,11 +29,14 @@ export async function middleware(request: NextRequest) {
     const isPublicRoute = request.nextUrl.pathname.startsWith('/sign-in') || 
                           request.nextUrl.pathname.startsWith('/sign-up') || 
                           request.nextUrl.pathname.startsWith('/invite/accept') ||
+                          request.nextUrl.pathname.startsWith('/api/invites') ||
+                          request.nextUrl.pathname.startsWith('/api/lms') ||
                           request.nextUrl.pathname.startsWith('/setup') ||
                           request.nextUrl.pathname.startsWith('/api/auth/setup') ||
                           request.nextUrl.pathname.startsWith('/api/webhooks')
 
     const isRootRoute = request.nextUrl.pathname === '/'
+    const isDashboardRoot = request.nextUrl.pathname === '/dashboard'
 
     if (!user && !isPublicRoute) {
       const url = request.nextUrl.clone()
@@ -41,15 +44,23 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    if (user && isPublicRoute) {
+    // Direct Zero-Flash Routing
+    // Instead of rendering the `/dashboard` loader, we instantly redirect them to `/dashboard/staff` etc.
+    // Logic: If user is logged in AND (on a public route OR at root OR at /dashboard) AND NOT on /invite/accept
+    const isInviteAccept = request.nextUrl.pathname.startsWith('/invite/accept')
+    const isApiRoute = request.nextUrl.pathname.startsWith('/api')
+    
+    if (user && (isPublicRoute || isRootRoute || isDashboardRoot) && !isInviteAccept && !isApiRoute) {
+      const rawRole = user.app_metadata?.role || user.user_metadata?.role || 'student'
+      
+      // Role allowlist validation to prevent path traversal
+      const VALID_ROLES = ['super_admin', 'org_admin', 'staff', 'student']
+      const role = VALID_ROLES.includes(rawRole) ? rawRole : 'student'
+      
+      const dashboardPath = `/dashboard/${role.replace(/_/g, '-')}`
+      
       const url = request.nextUrl.clone()
-      url.pathname = '/dashboard'
-      return NextResponse.redirect(url)
-    }
-
-    if (user && isRootRoute) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/dashboard'
+      url.pathname = dashboardPath
       return NextResponse.redirect(url)
     }
 

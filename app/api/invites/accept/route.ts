@@ -6,14 +6,9 @@ import { createAdminClient } from '@/lib/supabase/admin';
 export async function POST(request: Request) {
   try {
     const supabase = createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'You must be authenticated with Supabase first.' }, { status: 401 });
-    }
+    const { data: { user: sessionUser } } = await supabase.auth.getUser();
 
     let body: unknown;
-
     try {
       body = await request.json();
     } catch {
@@ -26,26 +21,55 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Token missing' }, { status: 400 });
     }
 
+    const adminDb = createAdminClient();
+
+    // 1. Identify the user. Prefer the session, but fallback to searching by email if we have a valid token.
+    let userId = sessionUser?.id;
+    let userEmail = sessionUser?.email;
+
+    if (!userId) {
+      // Fallback: Validate token first to get the email
+      const { data: tokenData, error: tokenError } = await adminDb
+        .from('invite_tokens')
+        .select('email')
+        .eq('token', token.trim())
+        .single();
+      
+      if (tokenError || !tokenData) {
+        return NextResponse.json({ error: 'Invalid or expired token.' }, { status: 400 });
+      }
+
+      // Look up the auth user by email
+      const { data: authUsers } = await adminDb.auth.admin.listUsers();
+      const matchingUser = authUsers?.users.find(u => u.email?.toLowerCase() === tokenData.email.toLowerCase());
+      
+      if (!matchingUser) {
+        return NextResponse.json({ error: 'User account not found. Please sign up first.' }, { status: 404 });
+      }
+
+      userId = matchingUser.id;
+      userEmail = matchingUser.email;
+    }
+
+    if (!userId || !userEmail) {
+      return NextResponse.json({ error: 'Could not identify user to complete invite.' }, { status: 401 });
+    }
+
     if (typeof fullName !== 'string' || fullName.trim().length === 0) {
       return NextResponse.json({ error: 'Full name is required' }, { status: 400 });
     }
 
-    if (!user.email) {
-      return NextResponse.json({ error: 'Authenticated user email is missing' }, { status: 400 });
-    }
-
-    const adminDb = createAdminClient();
     const { error: rpcError } = await adminDb.rpc('consume_invite_token_and_create_user_profile', {
       p_token: token.trim(),
-      p_user_id: user.id,
-      p_email: user.email,
+      p_user_id: userId,
+      p_email: userEmail,
       p_full_name: fullName.trim(),
     });
 
     if (rpcError) {
       console.error('Invite acceptance failed:', {
-        userId: user.id,
-        email: user.email,
+        userId,
+        email: userEmail,
         error: rpcError,
       });
 

@@ -38,7 +38,7 @@ export async function createInviteToken(
 }
 
 export async function validateToken(token: string) {
-  const supabase = createServerClient();
+  const supabase = createAdminClient();
   
   const { data, error } = await supabase
     .from('invite_tokens')

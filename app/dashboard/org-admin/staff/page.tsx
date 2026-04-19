@@ -14,6 +14,7 @@ export default function StaffDirectoryPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [email, setEmail] = useState('');
   const [latestInviteLink, setLatestInviteLink] = useState('');
+  const [resendingId, setResendingId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const fetchDirectory = async () => {
@@ -54,6 +55,24 @@ export default function StaffDirectoryPage() {
       toast({ title: 'Failed to invite', description: err.message, variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const resendInvite = async (inviteId: string) => {
+    setResendingId(inviteId);
+    try {
+      const res = await fetch('/api/invites/resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inviteId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast({ title: 'Success', description: 'Invitation email resent!' });
+    } catch (err: any) {
+      toast({ title: 'Resend failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setResendingId(null);
     }
   };
 
@@ -113,9 +132,20 @@ export default function StaffDirectoryPage() {
                     <tbody className="bg-white divide-y">
                       {data.invites.filter((i:any) => !i.used_at).map((inv: any) => (
                         <tr key={inv.id}>
-                          <td className="px-6 py-4 flex flex-col">
-                            <span className="font-medium text-sm">{inv.email}</span>
-                            <span className="text-xs text-stone-400">Expires: {new Date(inv.expires_at).toLocaleDateString()}</span>
+                          <td className="px-6 py-4 flex items-center justify-between">
+                            <div className="flex flex-col">
+                              <span className="font-medium text-sm">{inv.email}</span>
+                              <span className="text-xs text-stone-400">Expires: {new Date(inv.expires_at).toLocaleDateString()}</span>
+                            </div>
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 h-8 font-semibold text-xs"
+                              disabled={resendingId === inv.id}
+                              onClick={() => resendInvite(inv.id)}
+                            >
+                              {resendingId === inv.id ? '...' : 'Resend'}
+                            </Button>
                           </td>
                         </tr>
                       ))}
