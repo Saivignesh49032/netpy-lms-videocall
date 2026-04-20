@@ -24,6 +24,7 @@ const INVITE_ROLES = [
 
 export default function PlatformUsersPage() {
   const [users, setUsers] = useState<any[]>([]);
+  const [invites, setInvites] = useState<any[]>([]);
   const [orgs, setOrgs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -32,6 +33,7 @@ export default function PlatformUsersPage() {
   const [isInviting, setIsInviting] = useState(false);
   const [inviteLink, setInviteLink] = useState('');
   const [copied, setCopied] = useState(false);
+  const [resendingId, setResendingId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const fetchData = useCallback(async () => {
@@ -41,6 +43,7 @@ export default function PlatformUsersPage() {
         fetch('/api/organisations').then(r => r.json()),
       ]);
       setUsers(usersRes.users ?? []);
+      setInvites(usersRes.invites ?? []);
       setOrgs(orgsRes.organisations ?? []);
     } catch {
       toast({ title: 'Error loading data', variant: 'destructive' });
@@ -48,6 +51,24 @@ export default function PlatformUsersPage() {
       setIsLoading(false);
     }
   }, [toast]);
+
+  const resendInvite = async (inviteId: string) => {
+    setResendingId(inviteId);
+    try {
+      const res = await fetch('/api/invites/resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inviteId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast({ title: 'Success', description: 'Invitation email resent!' });
+    } catch (err: any) {
+      toast({ title: 'Resend failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setResendingId(null);
+    }
+  };
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -81,7 +102,16 @@ export default function PlatformUsersPage() {
         const fullLink = data.fullInviteUrl ?? `${window.location.origin}${data.inviteUrl}`;
         setInviteLink(fullLink);
         setInviteEmail('');
-        toast({ title: '✅ Invite sent!', description: 'Email sent and link generated below.' });
+        
+        if (data.emailSent) {
+          toast({ title: '✅ Invite sent!', description: 'Email sent successfully.' });
+        } else {
+          toast({ 
+            title: '⚠️ Email Failed (Link Ready)', 
+            description: 'The invite link was created, but the email could not be sent (likely due to Resend testing limits). Please copy and share the link below manually.',
+            variant: 'default',
+          });
+        }
         fetchData();
       } else {
         throw new Error('Failed to generate invite link from server response.');
@@ -116,13 +146,13 @@ export default function PlatformUsersPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Users Table */}
-        <div className="lg:col-span-2">
+        {/* Users & Invites Tables */}
+        <div className="lg:col-span-2 flex flex-col gap-6">
           <Card className="bg-slate-800 border-slate-700">
-            <CardHeader><CardTitle className="text-slate-100">All Users ({users.length})</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-slate-100">All Active Users ({users.length})</CardTitle></CardHeader>
             <CardContent>
               {users.length === 0 ? (
-                <p className="text-slate-500 text-sm">No users on the platform yet.</p>
+                <p className="text-slate-500 text-sm">No active users on the platform yet.</p>
               ) : (
                 <div className="overflow-x-auto rounded-lg border border-slate-700">
                   <table className="min-w-full divide-y divide-slate-700 text-sm">
@@ -143,8 +173,59 @@ export default function PlatformUsersPage() {
                               {(u.role ?? '').replace(/_/g, ' ')}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-slate-400">
+                          <td className="px-4 py-3 text-slate-400 truncate max-w-[120px]">
                             {u.organisations?.name || 'Platform Level'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Pending Invites */}
+          <Card className="bg-slate-800 border-slate-700">
+            <CardHeader><CardTitle className="text-slate-100">Pending Invitations ({invites.length})</CardTitle></CardHeader>
+            <CardContent>
+              {invites.length === 0 ? (
+                <p className="text-slate-500 text-sm">No pending invitations.</p>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-slate-700">
+                  <table className="min-w-full divide-y divide-slate-700 text-sm">
+                    <thead className="bg-slate-900">
+                      <tr>
+                        {['Email', 'Role', 'Org', 'Expires', ''].map(h => (
+                          <th key={h} className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700">
+                      {invites.map((inv: any) => (
+                        <tr key={inv.id} className="hover:bg-slate-700/50">
+                          <td className="px-4 py-3 text-slate-200">{inv.email}</td>
+                          <td className="px-4 py-3">
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ROLE_BADGE[inv.role]}`}>
+                              {(inv.role ?? '').replace(/_/g, ' ')}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-400 truncate max-w-[100px]">
+                            {inv.organisations?.name || 'Platform'}
+                          </td>
+                          <td className="px-4 py-3 text-slate-400 text-xs">
+                            {new Date(inv.expires_at).toLocaleDateString()}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              disabled={resendingId === inv.id}
+                              className="text-purple-400 hover:text-purple-300 hover:bg-purple-900/30 font-semibold text-xs h-8"
+                              onClick={() => resendInvite(inv.id)}
+                            >
+                              {resendingId === inv.id ? '...' : 'Resend'}
+                            </Button>
                           </td>
                         </tr>
                       ))}

@@ -14,6 +14,7 @@ const routeConfig = {
     { label: 'Meetings', route: '/dashboard/super-admin/meetings', icon: Video },
     { label: 'Schedule', route: '/dashboard/super-admin/schedule', icon: Calendar },
     { label: 'Recordings', route: '/dashboard/super-admin/recordings', icon: FileText },
+    { label: 'LMS API Docs', route: '/dashboard/super-admin/api-docs', icon: FileText },
     { label: 'Settings', route: '/dashboard/super-admin/settings', icon: Settings },
   ],
   org_admin: [
@@ -57,20 +58,22 @@ const activeTheme = {
   student: 'bg-sky-500 text-white shadow-sm'
 };
 
+import { SidebarSkeleton } from './SidebarSkeleton';
+
 export function Sidebar() {
   const pathname = usePathname();
   const { role, isLoaded } = useRole();
 
-  if (!isLoaded || !role) return <div className="w-64 shrink-0 h-screen bg-gray-100 animate-pulse border-r max-md:hidden" />;
+  if (!isLoaded || !role) return <SidebarSkeleton />;
 
   const links = routeConfig[role] || [];
   const theme = themeConfig[role] || 'bg-gray-100';
   const activeClass = activeTheme[role] || 'bg-gray-200';
 
   return (
-    <aside className={cn('sticky left-0 top-0 flex h-screen flex-col justify-between pt-28 px-6 pb-12 w-64 shrink-0 max-md:hidden', theme)}>
-      <div className="flex flex-1 flex-col gap-4">
-        <h2 className="text-xs uppercase tracking-widest font-bold opacity-50 mb-4 px-2">Navigation</h2>
+    <aside className={cn('sticky left-0 top-0 flex h-screen flex-col justify-between pt-28 px-4 pb-12 w-64 shrink-0 max-md:hidden', theme)}>
+      <div className="flex flex-1 flex-col gap-4 overflow-y-auto pr-2 custom-scrollbar">
+        <h2 className="text-xs uppercase tracking-widest font-bold opacity-50 mb-4 px-2 shrink-0">Navigation</h2>
         {links.map((link) => {
           const isActive = pathname === link.route || (pathname.startsWith(`${link.route}/`) && link.route.length > 10);
           const Icon = link.icon;

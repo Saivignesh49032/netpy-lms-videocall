@@ -95,6 +95,7 @@ export async function POST(request: Request) {
     }
 
     // Send invite email (non-blocking — don't fail the request if email fails)
+    let emailSent = true;
     try {
       await sendInviteEmail({
         toEmail: email.trim().toLowerCase(),

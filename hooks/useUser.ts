@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Role } from '@/lib/permissions';
+import { useUserContext } from '@/components/providers/UserProvider';
 
 export type UserProfile = {
   id: string;
@@ -15,10 +16,17 @@ export type UserProfile = {
 };
 
 export const useUser = () => {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
+  // Try to consume the hydrated server context first
+  const hydratedUser = useUserContext();
+  
+  // If we already have server data, we populate state instantly.
+  // Otherwise, we default to fallback behavior (null, false).
+  const [profile, setProfile] = useState<UserProfile | null>(hydratedUser?.user || null);
+  const [isLoaded, setIsLoaded] = useState(hydratedUser?.isLoaded || false);
 
   useEffect(() => {
+    // If the server successfully hydrated the profile, we don't need to double-fetch on mount.
+    // However, we STILL want the auth listener running in case they log out or update their DB row.
     let isMounted = true;
     const supabase = createClient();
 
@@ -50,7 +58,6 @@ export const useUser = () => {
         }
 
         if (data) {
-          // Exists in DB
           setProfile({
             id: data.id,
             email: data.email || authUser.email || '',
@@ -61,7 +68,6 @@ export const useUser = () => {
             orgId: data.org_id,
           });
         } else {
-          // Fallback (e.g. just invited but not inserted yet)
           setProfile({
             id: authUser.id,
             email: authUser.email || '',
@@ -80,13 +86,15 @@ export const useUser = () => {
       }
     };
 
-    fetchUserAndProfile();
+    // ONLY fetch if we didn't get hydrated data
+    if (!hydratedUser?.isLoaded || !hydratedUser?.user) {
+      fetchUserAndProfile();
+    }
 
-    // Listen sequentially matching the state
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return;
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-        fetchUserAndProfile(); // re-fetch profile completely
+        fetchUserAndProfile();
       } else if (event === 'SIGNED_OUT') {
         setProfile(null);
         setIsLoaded(true);
@@ -95,9 +103,9 @@ export const useUser = () => {
 
     return () => {
       isMounted = false;
-      authListener.subscription.unsubscribe();
+      authListener?.subscription.unsubscribe();
     };
-  }, []);
+  }, [hydratedUser?.isLoaded, hydratedUser?.user]); // Dependencies
 
   return { user: profile, isLoaded };
 };

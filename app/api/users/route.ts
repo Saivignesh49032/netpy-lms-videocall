@@ -22,14 +22,26 @@ export async function GET() {
     }
 
     const adminDb = createAdminClient();
+    
+    const [usersRes, invitesRes] = await Promise.all([
+      adminDb
+        .from('users')
+        .select('id, email, full_name, role, is_active, joined_at, organisations!users_org_id_fkey(name)')
+        .order('joined_at', { ascending: false }),
+      adminDb
+        .from('invite_tokens')
+        .select('id, email, role, created_at, expires_at, used_at, organisations(name)')
+        .is('used_at', null)
+        .order('created_at', { ascending: false })
+    ]);
 
-    const { data, error } = await adminDb
-      .from('users')
-      .select('id, email, full_name, role, is_active, joined_at, organisations!users_org_id_fkey(name)')
-      .order('joined_at', { ascending: false });
+    if (usersRes.error) throw usersRes.error;
+    if (invitesRes.error) throw invitesRes.error;
 
-    if (error) throw error;
-    return NextResponse.json({ users: data });
+    return NextResponse.json({ 
+      users: usersRes.data || [], 
+      invites: invitesRes.data || [] 
+    });
   } catch (err) {
     console.error('Users route failed:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

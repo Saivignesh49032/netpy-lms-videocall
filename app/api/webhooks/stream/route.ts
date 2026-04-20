@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { archiveRecording } from '@/lib/archiver';
 
 /**
  * Stream Webhook Handler
@@ -15,23 +16,26 @@ export async function POST(request: Request) {
   try {
     const rawBody = await request.text();
     const sig = request.headers.get('x-signature');
-    const secret = process.env.STREAM_WEBHOOK_SECRET;
+    const secret = process.env.STREAM_API_SECRET || process.env.STREAM_WEBHOOK_SECRET;
 
-    // Verify signature if secret is configured
+    // Webhook Security Signature Verification
     if (secret) {
       if (!sig) {
-        console.error('[Stream Webhook] Missing signature header while secret is configured');
-        return NextResponse.json({ error: 'Missing signature' }, { status: 401 });
+        console.error('[Stream Webhook] Missing x-signature header while secret is configured');
+        return NextResponse.json({ error: 'Unauthorized: Missing signature' }, { status: 401 });
       }
+      
       const expectedSig = crypto
         .createHmac('sha256', secret)
         .update(rawBody)
         .digest('hex');
       
       if (sig !== expectedSig) {
-        console.error('[Stream Webhook] Invalid signature');
-        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+        console.error('[Stream Webhook] Invalid signature detected');
+        return NextResponse.json({ error: 'Unauthorized: Invalid signature' }, { status: 401 });
       }
+    } else {
+      console.warn('[Stream Webhook] Running without signature verification. Set STREAM_API_SECRET for production.');
     }
 
     const body = JSON.parse(rawBody);
@@ -74,14 +78,23 @@ export async function POST(request: Request) {
     }
 
     // The recording.url from Stream is the file location.
-    const fileKey = recording.url ?? recording.filename ?? `recordings/${streamCallId}/${recording.session_id ?? 'recording'}.mp4`;
+    // Sanitize URL: strip query params to get a stable, consistent key
+    const rawUrl = recording.url ?? recording.filename ?? `recordings/${streamCallId}/${recording.session_id ?? 'recording'}.mp4`;
+    const fileKey = rawUrl.split('?')[0];
+    const sessionId = recording.session_id ?? recording.id ?? null;
 
-    // Idempotency check: don't insert if fileKey already exists
-    const { data: existing } = await adminDb
+    // Idempotency check by session_id (most stable), fallback to file_key
+    const { data: matched } = await adminDb
       .from('recordings')
       .select('id')
-      .eq('file_key', fileKey)
-      .maybeSingle();
+      .or(
+        sessionId
+          ? `stream_recording_id.eq.${encodeURIComponent(sessionId)},file_key.eq.${encodeURIComponent(fileKey)}`
+          : `file_key.eq.${encodeURIComponent(fileKey)}`
+      )
+      .limit(1);
+
+    const existing = matched && matched.length > 0 ? matched[0] : null;
 
     if (existing) {
       console.log('[Stream Webhook] Recording already exists, skipping:', fileKey);
@@ -98,7 +111,7 @@ export async function POST(request: Request) {
     }
 
     // Insert recording metadata into Supabase
-    const { error: insertError } = await adminDb
+    const { data: newRecord, error: insertError } = await adminDb
       .from('recordings')
       .insert({
         meeting_id: meeting.id,
@@ -108,7 +121,9 @@ export async function POST(request: Request) {
         file_key: fileKey,
         duration_seconds: durationSeconds,
         status: 'ready',
-      });
+      })
+      .select('id')
+      .single();
 
     if (insertError) {
       console.error('[Stream Webhook] Failed to insert recording:', insertError);
@@ -116,6 +131,14 @@ export async function POST(request: Request) {
     }
 
     console.log('[Stream Webhook] Recording saved for meeting:', meeting.id);
+
+    // 🚀 Trigger background archival pipeline (non-blocking) - using existing sessionId from above
+    if (sessionId) {
+      archiveRecording(newRecord.id, fileKey, sessionId, meeting.id).catch(err => {
+        console.error('[Archiver Trigger] Failed:', err);
+      });
+    }
+
     return NextResponse.json({ success: true });
   } catch (err: any) {
     console.error('[Stream Webhook] Unhandled error:', err);

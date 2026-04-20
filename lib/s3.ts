@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 export const BUCKET = process.env.MINIO_BUCKET ?? 'lms-recordings';
@@ -7,7 +7,7 @@ export const BUCKET = process.env.MINIO_BUCKET ?? 'lms-recordings';
 // avoiding crashes at build time when env vars are not yet set
 let _s3Client: S3Client | null = null;
 
-function getS3Client(): S3Client {
+export function getS3Client(): S3Client {
   if (_s3Client) return _s3Client;
 
   const endpoint = process.env.MINIO_ENDPOINT;
@@ -45,4 +45,21 @@ export async function getPresignedUrl(fileKey: string, expiresInSeconds = 3600):
   const client = getS3Client();
   const command = new GetObjectCommand({ Bucket: BUCKET, Key: fileKey });
   return getSignedUrl(client, command, { expiresIn: expiresInSeconds });
+}
+
+/**
+ * Checks if an object exists in the S3 bucket.
+ * Useful for idempotency before uploading.
+ */
+export async function objectExists(key: string): Promise<boolean> {
+  try {
+    const client = getS3Client();
+    await client.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
+    return true;
+  } catch (err: any) {
+    if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+      return false;
+    }
+    throw err; // Rethrow other errors (permissions, network, etc.)
+  }
 }

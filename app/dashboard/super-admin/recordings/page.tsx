@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '@/components/ui/use-toast';
+import { createClient } from '@/lib/supabase/client';
 import Loader from '@/components/Loader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Video, Play, Clock, Calendar, X, Download, User } from 'lucide-react';
+import { Video, Play, Clock, Calendar, X, Download, User, RefreshCw, Trash2, AlertTriangle, HardDrive, Cloud } from 'lucide-react';
 
 interface Recording {
   id: string;
@@ -32,8 +33,42 @@ export default function SuperAdminRecordingsPage() {
   const [playingUrl, setPlayingUrl] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [playingTitle, setPlayingTitle] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const { toast } = useToast();
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await fetch('/api/recordings/sync', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? 'Sync failed');
+      toast({ title: `✅ Sync Complete`, description: `${data.synced} new recording(s) found.` });
+      await fetchRecordings();
+    } catch (err: any) {
+      toast({ title: 'Sync Failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/recordings/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? 'Failed to delete recording');
+      setRecordings(prev => prev.filter(r => r.id !== id));
+      toast({ title: 'Recording deleted.' });
+    } catch (err: any) {
+      toast({ title: 'Delete Failed', description: err.message, variant: 'destructive' });
+    } finally {
+      setDeletingId(null);
+      setConfirmDeleteId(null);
+    }
+  };
 
   const fetchRecordings = useCallback(async () => {
     try {
@@ -50,10 +85,7 @@ export default function SuperAdminRecordingsPage() {
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setPlayingUrl(null);
-        setPlayingTitle('');
-      }
+      if (e.key === 'Escape') { setPlayingUrl(null); setPlayingTitle(''); }
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
@@ -66,7 +98,25 @@ export default function SuperAdminRecordingsPage() {
     }
   }, [playingUrl]);
 
+  // Initial load
   useEffect(() => { fetchRecordings(); }, [fetchRecordings]);
+
+  // Supabase Realtime: auto-add new recordings as they arrive
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel('superadmin-recordings-live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'recordings' },
+        () => {
+          fetchRecordings();
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchRecordings, toast]);
 
   const handlePlay = async (recording: Recording) => {
     setLoadingId(recording.id);
@@ -76,7 +126,7 @@ export default function SuperAdminRecordingsPage() {
       
       if (!res.ok) {
         if (res.status === 404) throw new Error('Recording not found');
-        if (res.status === 403) throw new Error('Access denied: Unauthorized access to this recording');
+        if (res.status === 403) throw new Error('Access denied');
         throw new Error(data?.error ?? 'Failed to get playback URL');
       }
       
@@ -120,9 +170,20 @@ export default function SuperAdminRecordingsPage() {
         </div>
       )}
 
-      <div>
-        <h1 className="text-3xl font-bold text-slate-100">Platform Recordings</h1>
-        <p className="text-slate-400">All recorded sessions across the platform.</p>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-100">Platform Recordings</h1>
+          <p className="text-slate-400">All recorded sessions across the platform. Updates automatically.</p>
+        </div>
+        <button
+          onClick={handleSync}
+          disabled={isSyncing}
+          className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-60"
+        >
+          <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+          {isSyncing ? 'Syncing...' : 'Sync Recordings'}
+        </button>
       </div>
 
       {recordings.length === 0 ? (
@@ -130,7 +191,7 @@ export default function SuperAdminRecordingsPage() {
           <CardContent className="flex flex-col items-center py-20 gap-3">
             <Video className="h-12 w-12 text-slate-600" />
             <p className="text-slate-400 font-medium">No recordings yet.</p>
-            <p className="text-slate-600 text-sm">Recordings will appear here after sessions are recorded.</p>
+            <p className="text-slate-600 text-sm">Recordings appear automatically when sessions are recorded.</p>
           </CardContent>
         </Card>
       ) : (
@@ -141,7 +202,7 @@ export default function SuperAdminRecordingsPage() {
               <table className="min-w-full divide-y divide-slate-700">
                 <thead className="bg-slate-900">
                   <tr>
-                    {['Meeting', 'Host', 'Duration', 'Date', ''].map(h => (
+                    {['Meeting', 'Host', 'Duration', 'Storage', 'Date', 'Actions'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">{h}</th>
                     ))}
                   </tr>
@@ -164,6 +225,13 @@ export default function SuperAdminRecordingsPage() {
                           {formatDuration(rec.duration_seconds)}
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-sm">
+                        <span className={`flex items-center gap-1.5 w-fit px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border 
+                          ${!rec.file_key?.startsWith('http') ? 'bg-emerald-900/30 text-emerald-400 border-emerald-800' : 'bg-blue-900/30 text-blue-400 border-blue-800'}`}
+                        >
+                          {!rec.file_key?.startsWith('http') ? <><HardDrive className="h-3 w-3" /> Saved</> : <><Cloud className="h-3 w-3" /> Stream CDN</>}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-sm text-slate-400">
                         <span className="flex items-center gap-1.5">
                           <Calendar className="h-3.5 w-3.5" />
@@ -171,17 +239,47 @@ export default function SuperAdminRecordingsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <button
-                          onClick={() => handlePlay(rec)}
-                          disabled={loadingId === rec.id}
-                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-60"
-                        >
-                          {loadingId === rec.id
-                            ? <span className="h-3.5 w-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                            : <Play className="h-3.5 w-3.5" />
-                          }
-                          {loadingId === rec.id ? 'Loading...' : 'Play'}
-                        </button>
+                        {confirmDeleteId === rec.id ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-red-400 flex items-center gap-1">
+                              <AlertTriangle className="h-3 w-3" /> Sure?
+                            </span>
+                            <button
+                              onClick={() => handleDelete(rec.id)}
+                              disabled={deletingId === rec.id}
+                              className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors disabled:opacity-60"
+                            >
+                              {deletingId === rec.id ? '...' : 'Yes'}
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="text-xs px-2 py-1 bg-slate-600 hover:bg-slate-500 text-white rounded transition-colors"
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handlePlay(rec)}
+                              disabled={loadingId === rec.id}
+                              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-60"
+                            >
+                              {loadingId === rec.id
+                                ? <span className="h-3.5 w-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                                : <Play className="h-3.5 w-3.5" />
+                              }
+                              {loadingId === rec.id ? 'Loading...' : 'Play'}
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteId(rec.id)}
+                              className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
+                              title="Delete recording"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
